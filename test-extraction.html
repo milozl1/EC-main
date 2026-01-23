@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Extraction Test Suite - v7.1 (Duplicates)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 { color: #333; }
+        h3 { margin-top: 20px; color: #666; }
+        .test-section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-section h2 {
+            margin-top: 0;
+            color: #0066cc;
+            border-bottom: 2px solid #0066cc;
+            padding-bottom: 10px;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+        }
+        .pass { background: #d4edda; color: #155724; }
+        .fail { background: #f8d7da; color: #721c24; }
+        .info { background: #cce5ff; color: #004085; }
+        .warning { background: #fff3cd; color: #856404; }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th { background: #f8f9fa; }
+        .stat-box {
+            display: inline-block;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .stat-accepted { background: #28a745; color: white; }
+        .stat-excluded { background: #ffc107; color: #333; }
+        .stat-invalid { background: #dc3545; color: white; }
+        .stat-duplicate { background: #ff9800; color: white; }
+        .stat-total { background: #17a2b8; color: white; }
+        #pdfInput { margin: 10px 0; padding: 10px; }
+        button {
+            background: #0066cc;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0052a3; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        #results { margin-top: 20px; }
+        .dup-badge {
+            background: #ff9800;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 0.8em;
+            margin-left: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Delivery Note Extraction Test Suite - v7.1</h1>
+    <p><strong>Focus:</strong> Duplicate Detection & Reporting</p>
+    
+    <div class="test-section">
+        <h2>1. Unit Tests - Duplicate Detection Logic</h2>
+        <div id="duplicateTests"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>2. Unit Tests - Validation Logic</h2>
+        <div id="unitTests"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>3. PDF Extraction Test</h2>
+        <p>Select PDF files to test extraction and duplicate detection:</p>
+        <input type="file" id="pdfInput" multiple accept=".pdf">
+        <br>
+        <button onclick="runPDFTests()" id="runTestsBtn">Run Extraction Tests</button>
+        <button onclick="clearResults()">Clear Results</button>
+        <div id="results"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>4. Regex Pattern Tests</h2>
+        <div id="regexTests"></div>
+    </div>
+
+    <script>
+        // Configure PDF.js worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        
+        // ============================================
+        // EXTRACTION FUNCTION (from app.js v7.1)
+        // ============================================
+        
+        function extractPotentialDeliveryNotes(textItems) {
+            const allCandidates = [];
+            const occurrenceCount = {};
+            
+            for (const item of textItems) {
+                const text = item.text;
+                const cleaned = text.replace(/\s+/g, '');
+                
+                if (!cleaned) continue;
+                
+                if (/^\d{7,10}$/.test(cleaned)) {
+                    if (cleaned.length === 10 && cleaned.startsWith('0')) {
+                        continue;
+                    }
+                    
+                    allCandidates.push(cleaned);
+                    occurrenceCount[cleaned] = (occurrenceCount[cleaned] || 0) + 1;
+                }
+            }
+            
+            const uniqueCandidates = [...new Set(allCandidates)];
+            const duplicates = [];
+            
+            for (const value of uniqueCandidates) {
+                const count = occurrenceCount[value];
+                if (count > 1) {
+                    duplicates.push({
+                        value: value,
+                        count: count,
+                        reason: `Found ${count} times in document`
+                    });
+                }
+            }
+            
+            return {
+                unique: uniqueCandidates,
+                duplicates: duplicates,
+                totalCount: allCandidates.length,
+                occurrenceCount: occurrenceCount
+            };
+        }
+        
+        function validateDeliveryNotes(extractionResult) {
+            const rawNotes = extractionResult.unique;
+            const extractedDuplicates = extractionResult.duplicates;
+            const occurrenceCount = extractionResult.occurrenceCount;
+            
+            const results = {
+                accepted: [],
+                excluded: [],
+                invalid: [],
+                autoCorrections: [],
+                duplicates: [],
+                uniqueCount: 0,
+                duplicateCount: 0,
+                totalOccurrences: extractionResult.totalCount
+            };
+            
+            const seen = new Set();
+            const tempAccepted = [];
+            const pending7Digit = [];
+            
+            for (const note of rawNotes) {
+                const cleaned = note.replace(/\s+/g, '');
+                if (!cleaned) continue;
+                
+                if (!/^\d+$/.test(cleaned)) {
+                    results.invalid.push({ value: cleaned, reason: 'Contains non-digit characters' });
+                    continue;
+                }
+                
+                const len = cleaned.length;
+                
+                if (len === 8) {
+                    seen.add(cleaned);
+                    tempAccepted.push(cleaned);
+                } else if (len === 9 || len === 10) {
+                    results.excluded.push({ value: cleaned, reason: `${len} digits (excluded - likely Transport ID)` });
+                } else if (len === 7) {
+                    pending7Digit.push(cleaned);
+                } else {
+                    results.invalid.push({ value: cleaned, reason: `${len} digits (expected 8)` });
+                }
+            }
+            
+            // Process 7-digit numbers
+            if (pending7Digit.length > 0) {
+                const firstDigitCounts = {};
+                for (const note of tempAccepted) {
+                    const fd = note[0];
+                    firstDigitCounts[fd] = (firstDigitCounts[fd] || 0) + 1;
+                }
+                
+                let dominantDigit = null;
+                let maxCount = 0;
+                const threshold = Math.max(1, tempAccepted.length * 0.3);
+                
+                for (const [digit, count] of Object.entries(firstDigitCounts)) {
+                    if (count > maxCount && count >= threshold) {
+                        maxCount = count;
+                        dominantDigit = digit;
+                    }
+                }
+                
+                for (const pending of pending7Digit) {
+                    if (dominantDigit) {
+                        const corrected = dominantDigit + pending;
+                        
+                        if (!seen.has(corrected)) {
+                            seen.add(corrected);
+                            results.autoCorrections.push({
+                                original: pending,
+                                corrected: corrected,
+                                reason: `Added leading '${dominantDigit}'`
+                            });
+                            results.accepted.push(corrected);
+                        } else {
+                            const existingCount = occurrenceCount[corrected] || 1;
+                            results.duplicates.push({ 
+                                value: corrected, 
+                                count: existingCount + 1,
+                                reason: `Corrected from ${pending}, already exists` 
+                            });
+                            results.duplicateCount++;
+                        }
+                    } else {
+                        results.invalid.push({ value: pending, reason: '7 digits - needs manual review' });
+                    }
+                }
+            }
+            
+            results.accepted.push(...tempAccepted);
+            
+            // Add duplicates from extraction
+            for (const dup of extractedDuplicates) {
+                if (dup.value.length === 8 && seen.has(dup.value)) {
+                    const alreadyAdded = results.duplicates.some(d => d.value === dup.value);
+                    if (!alreadyAdded) {
+                        results.duplicates.push(dup);
+                        results.duplicateCount += (dup.count - 1);
+                    }
+                }
+            }
+            
+            results.uniqueCount = new Set(results.accepted).size;
+            
+            return results;
+        }
+        
+        async function extractDeliveryNotesFromPDF(pdfFile) {
+            const arrayBuffer = await pdfFile.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            
+            const allTextItems = [];
+            
+            for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                const page = await pdf.getPage(pageNum);
+                const textContent = await page.getTextContent();
+                
+                for (const item of textContent.items) {
+                    const text = (item.str || '').trim();
+                    if (text) {
+                        allTextItems.push({ text: text, pageNum: pageNum });
+                    }
+                }
+            }
+            
+            const extractionResult = extractPotentialDeliveryNotes(allTextItems);
+            return validateDeliveryNotes(extractionResult);
+        }
+        
+        // ============================================
+        // DUPLICATE DETECTION TESTS
+        // ============================================
+        
+        function runDuplicateTests() {
+            const container = document.getElementById('duplicateTests');
+            let passCount = 0;
+            let failCount = 0;
+            
+            // Test 1: Simple duplicates
+            const test1Input = [
+                { text: '12345678' },
+                { text: '12345678' },
+                { text: '12345678' },
+                { text: '87654321' }
+            ];
+            const test1Result = extractPotentialDeliveryNotes(test1Input);
+            
+            const test1Pass = test1Result.duplicates.length === 1 && 
+                              test1Result.duplicates[0].value === '12345678' &&
+                              test1Result.duplicates[0].count === 3;
+            
+            container.innerHTML += `
+                <div class="test-result ${test1Pass ? 'pass' : 'fail'}">
+                    <strong>${test1Pass ? '✓' : '✗'} Test 1: Detect simple duplicates</strong><br>
+                    <small>Input: ['12345678', '12345678', '12345678', '87654321']</small><br>
+                    <small>Expected: 1 duplicate entry (12345678 ×3), Got: ${test1Result.duplicates.length} entries</small><br>
+                    ${test1Result.duplicates.length > 0 ? `<small>Duplicate: ${test1Result.duplicates[0].value} ×${test1Result.duplicates[0].count}</small>` : ''}
+                </div>`;
+            if (test1Pass) passCount++; else failCount++;
+            
+            // Test 2: No duplicates
+            const test2Input = [
+                { text: '12345678' },
+                { text: '87654321' },
+                { text: '11111111' }
+            ];
+            const test2Result = extractPotentialDeliveryNotes(test2Input);
+            
+            const test2Pass = test2Result.duplicates.length === 0;
+            
+            container.innerHTML += `
+                <div class="test-result ${test2Pass ? 'pass' : 'fail'}">
+                    <strong>${test2Pass ? '✓' : '✗'} Test 2: No false positives for unique values</strong><br>
+                    <small>Input: ['12345678', '87654321', '11111111'] (all unique)</small><br>
+                    <small>Expected: 0 duplicates, Got: ${test2Result.duplicates.length}</small>
+                </div>`;
+            if (test2Pass) passCount++; else failCount++;
+            
+            // Test 3: Multiple different duplicates
+            const test3Input = [
+                { text: '12345678' },
+                { text: '12345678' },
+                { text: '87654321' },
+                { text: '87654321' },
+                { text: '87654321' },
+                { text: '11111111' }
+            ];
+            const test3Result = extractPotentialDeliveryNotes(test3Input);
+            
+            const test3Pass = test3Result.duplicates.length === 2;
+            
+            container.innerHTML += `
+                <div class="test-result ${test3Pass ? 'pass' : 'fail'}">
+                    <strong>${test3Pass ? '✓' : '✗'} Test 3: Multiple different duplicates</strong><br>
+                    <small>Input: 12345678×2, 87654321×3, 11111111×1</small><br>
+                    <small>Expected: 2 duplicate entries, Got: ${test3Result.duplicates.length}</small><br>
+                    <small>Duplicates found: ${test3Result.duplicates.map(d => d.value + '×' + d.count).join(', ')}</small>
+                </div>`;
+            if (test3Pass) passCount++; else failCount++;
+            
+            // Test 4: Total count vs unique count
+            const test4Input = [
+                { text: '12345678' },
+                { text: '12345678' },
+                { text: '12345678' },
+                { text: '87654321' }
+            ];
+            const test4Result = extractPotentialDeliveryNotes(test4Input);
+            
+            const test4Pass = test4Result.totalCount === 4 && test4Result.unique.length === 2;
+            
+            container.innerHTML += `
+                <div class="test-result ${test4Pass ? 'pass' : 'fail'}">
+                    <strong>${test4Pass ? '✓' : '✗'} Test 4: Total count vs unique count</strong><br>
+                    <small>Input: 4 items with 2 unique values</small><br>
+                    <small>Expected: total=4, unique=2, Got: total=${test4Result.totalCount}, unique=${test4Result.unique.length}</small>
+                </div>`;
+            if (test4Pass) passCount++; else failCount++;
+            
+            // Test 5: Duplicates go to validation correctly
+            const test5Input = [
+                { text: '12345678' },
+                { text: '12345678' },
+                { text: '87654321' }
+            ];
+            const test5Extraction = extractPotentialDeliveryNotes(test5Input);
+            const test5Validation = validateDeliveryNotes(test5Extraction);
+            
+            const test5Pass = test5Validation.duplicates.length === 1 &&
+                              test5Validation.accepted.length === 2 &&
+                              test5Validation.duplicateCount === 1;
+            
+            container.innerHTML += `
+                <div class="test-result ${test5Pass ? 'pass' : 'fail'}">
+                    <strong>${test5Pass ? '✓' : '✗'} Test 5: Validation receives duplicates correctly</strong><br>
+                    <small>Input: 12345678×2, 87654321×1</small><br>
+                    <small>Expected: 1 duplicate entry, 2 accepted (unique), duplicateCount=1</small><br>
+                    <small>Got: ${test5Validation.duplicates.length} dup entries, ${test5Validation.accepted.length} accepted, count=${test5Validation.duplicateCount}</small>
+                </div>`;
+            if (test5Pass) passCount++; else failCount++;
+            
+            // Test 6: Duplicate info has count
+            const test6Input = [
+                { text: '12345678' },
+                { text: '12345678' },
+                { text: '12345678' },
+                { text: '12345678' },
+                { text: '12345678' }
+            ];
+            const test6Extraction = extractPotentialDeliveryNotes(test6Input);
+            const test6Validation = validateDeliveryNotes(test6Extraction);
+            
+            const test6Pass = test6Validation.duplicates.length === 1 &&
+                              test6Validation.duplicates[0].count === 5;
+            
+            container.innerHTML += `
+                <div class="test-result ${test6Pass ? 'pass' : 'fail'}">
+                    <strong>${test6Pass ? '✓' : '✗'} Test 6: Duplicate count is accurate</strong><br>
+                    <small>Input: 12345678 appears 5 times</small><br>
+                    <small>Expected: duplicate with count=5, Got: count=${test6Validation.duplicates[0]?.count}</small>
+                </div>`;
+            if (test6Pass) passCount++; else failCount++;
+            
+            // Summary
+            const summary = document.createElement('div');
+            summary.className = `test-result ${failCount === 0 ? 'pass' : 'warning'}`;
+            summary.innerHTML = `<strong>Duplicate Tests Summary:</strong> ${passCount}/${passCount + failCount} tests passed`;
+            container.insertBefore(summary, container.firstChild);
+        }
+        
+        // ============================================
+        // UNIT TESTS
+        // ============================================
+        
+        function runUnitTests() {
+            const tests = [
+                { input: '12345678', expectedStatus: 'accepted', description: '8 digits should be ACCEPTED' },
+                { input: '123456789', expectedStatus: 'excluded', description: '9 digits should be EXCLUDED' },
+                { input: '1234567890', expectedStatus: 'excluded', description: '10 digits should be EXCLUDED' },
+                { input: '1234567', expectedStatus: 'invalid', description: '7 digits should be INVALID (needs correction)' },
+                { input: '123456', expectedStatus: 'invalid', description: '6 digits should be INVALID' },
+                { input: '12345678901', expectedStatus: 'invalid', description: '11 digits should be INVALID' },
+                { input: '1234567A', expectedStatus: 'invalid', description: 'Contains letter - should be INVALID' },
+            ];
+            
+            const container = document.getElementById('unitTests');
+            let passCount = 0;
+            let failCount = 0;
+            
+            tests.forEach((test, index) => {
+                // Create a mock extraction result for single value
+                const extractionResult = {
+                    unique: [test.input],
+                    duplicates: [],
+                    totalCount: 1,
+                    occurrenceCount: { [test.input]: 1 }
+                };
+                
+                const result = validateDeliveryNotes(extractionResult);
+                let status = 'invalid';
+                if (result.accepted.includes(test.input)) status = 'accepted';
+                else if (result.excluded.some(e => e.value === test.input)) status = 'excluded';
+                
+                const passed = status === test.expectedStatus;
+                
+                if (passed) passCount++;
+                else failCount++;
+                
+                const div = document.createElement('div');
+                div.className = `test-result ${passed ? 'pass' : 'fail'}`;
+                div.innerHTML = `
+                    <strong>${passed ? '✓' : '✗'} Test ${index + 1}:</strong> ${test.description}<br>
+                    <small>Input: "${test.input}" | Expected: ${test.expectedStatus} | Got: ${status}</small>
+                `;
+                container.appendChild(div);
+            });
+            
+            const summary = document.createElement('div');
+            summary.className = `test-result ${failCount === 0 ? 'pass' : 'warning'}`;
+            summary.innerHTML = `<strong>Validation Tests Summary:</strong> ${passCount}/${tests.length} tests passed`;
+            container.insertBefore(summary, container.firstChild);
+        }
+        
+        // ============================================
+        // REGEX PATTERN TESTS
+        // ============================================
+        
+        function runRegexTests() {
+            const pattern = /^\d{7,10}$/;
+            
+            const tests = [
+                { input: '1234567', shouldMatch: true, description: '7 digits' },
+                { input: '12345678', shouldMatch: true, description: '8 digits' },
+                { input: '123456789', shouldMatch: true, description: '9 digits' },
+                { input: '1234567890', shouldMatch: true, description: '10 digits' },
+                { input: '123456', shouldMatch: false, description: '6 digits (too short)' },
+                { input: '12345678901', shouldMatch: false, description: '11 digits (too long)' },
+                { input: '21/02/2025', shouldMatch: false, description: 'Date format' },
+                { input: '360.0', shouldMatch: false, description: 'Decimal number' },
+                { input: '180222866R', shouldMatch: false, description: 'Alphanumeric' },
+            ];
+            
+            const container = document.getElementById('regexTests');
+            let passCount = 0;
+            let failCount = 0;
+            
+            tests.forEach((test, index) => {
+                const matches = pattern.test(test.input.trim());
+                const passed = matches === test.shouldMatch;
+                
+                if (passed) passCount++;
+                else failCount++;
+                
+                const div = document.createElement('div');
+                div.className = `test-result ${passed ? 'pass' : 'fail'}`;
+                div.innerHTML = `
+                    <strong>${passed ? '✓' : '✗'} Pattern Test ${index + 1}:</strong> ${test.description}<br>
+                    <small>Input: "${test.input}" | Should Match: ${test.shouldMatch} | Matches: ${matches}</small>
+                `;
+                container.appendChild(div);
+            });
+            
+            const summary = document.createElement('div');
+            summary.className = `test-result ${failCount === 0 ? 'pass' : 'warning'}`;
+            summary.innerHTML = `<strong>Regex Tests Summary:</strong> ${passCount}/${tests.length} tests passed`;
+            container.insertBefore(summary, container.firstChild);
+        }
+        
+        // ============================================
+        // PDF EXTRACTION TESTS
+        // ============================================
+        
+        async function runPDFTests() {
+            const fileInput = document.getElementById('pdfInput');
+            const resultsDiv = document.getElementById('results');
+            const runBtn = document.getElementById('runTestsBtn');
+            
+            if (!fileInput.files || fileInput.files.length === 0) {
+                resultsDiv.innerHTML = '<div class="test-result warning">Please select PDF files first</div>';
+                return;
+            }
+            
+            runBtn.disabled = true;
+            resultsDiv.innerHTML = '<div class="test-result info">Processing PDF files...</div>';
+            
+            let html = '';
+            let totalAccepted = 0;
+            let totalExcluded = 0;
+            let totalInvalid = 0;
+            let totalDuplicates = 0;
+            
+            for (const file of fileInput.files) {
+                try {
+                    html += `<h3>📄 ${file.name}</h3>`;
+                    
+                    const results = await extractDeliveryNotesFromPDF(file);
+                    
+                    totalAccepted += results.accepted.length;
+                    totalExcluded += results.excluded.length;
+                    totalInvalid += results.invalid.length;
+                    totalDuplicates += results.duplicates.length;
+                    
+                    // Statistics
+                    html += `
+                        <div>
+                            <span class="stat-box stat-accepted">✓ Accepted: ${results.accepted.length}</span>
+                            <span class="stat-box stat-excluded">⚠ Excluded: ${results.excluded.length}</span>
+                            <span class="stat-box stat-invalid">✗ Invalid: ${results.invalid.length}</span>
+                            <span class="stat-box stat-duplicate">🔁 Duplicates: ${results.duplicates.length}</span>
+                        </div>
+                    `;
+                    
+                    // Duplicates section
+                    if (results.duplicates.length > 0) {
+                        html += `<h4>🔁 Duplicates Found:</h4>`;
+                        html += `<table><tr><th>Value</th><th>Count</th><th>Reason</th></tr>`;
+                        results.duplicates.forEach(d => {
+                            html += `<tr class="warning">
+                                <td><code>${d.value}</code></td>
+                                <td><span class="dup-badge">×${d.count}</span></td>
+                                <td>${d.reason}</td>
+                            </tr>`;
+                        });
+                        html += `</table>`;
+                    } else {
+                        html += `<div class="test-result pass">✓ No duplicates found in this PDF</div>`;
+                    }
+                    
+                    // Accepted values
+                    if (results.accepted.length > 0) {
+                        const uniqueAccepted = [...new Set(results.accepted)];
+                        html += `<h4>✓ Accepted Values (${uniqueAccepted.length} unique):</h4>`;
+                        html += `<div style="max-height: 200px; overflow-y: auto; background: #f8f9fa; padding: 10px; border-radius: 4px;">`;
+                        html += uniqueAccepted.slice(0, 50).map(v => `<code style="margin: 2px; display: inline-block;">${v}</code>`).join(' ');
+                        if (uniqueAccepted.length > 50) html += `<br><small>... and ${uniqueAccepted.length - 50} more</small>`;
+                        html += `</div>`;
+                    }
+                    
+                    html += '<hr>';
+                    
+                } catch (error) {
+                    html += `<div class="test-result fail">Error processing ${file.name}: ${error.message}</div>`;
+                }
+            }
+            
+            // Grand total
+            html = `
+                <div class="test-section" style="background: #e8f5e9;">
+                    <h3>📊 Grand Total (All Files)</h3>
+                    <span class="stat-box stat-accepted">✓ Accepted: ${totalAccepted}</span>
+                    <span class="stat-box stat-excluded">⚠ Excluded: ${totalExcluded}</span>
+                    <span class="stat-box stat-invalid">✗ Invalid: ${totalInvalid}</span>
+                    <span class="stat-box stat-duplicate">🔁 Duplicates: ${totalDuplicates}</span>
+                </div>
+                <hr>
+            ` + html;
+            
+            resultsDiv.innerHTML = html;
+            runBtn.disabled = false;
+        }
+        
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+        
+        // Run all tests on page load
+        runDuplicateTests();
+        runUnitTests();
+        runRegexTests();
+    </script>
+</body>
+</html>
