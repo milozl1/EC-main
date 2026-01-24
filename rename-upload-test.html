@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Rename Upload - Automated Test</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1>Automated Test — rename-upload</h1>
+      <p class="subtitle">Verifies multiple files with same original name keep correct content after renaming.</p>
+    </header>
+
+    <section class="test-section">
+      <button id="runTest" class="btn btn-primary">Run Tests</button>
+      <div id="results"></div>
+    </section>
+  </div>
+
+  <script src="rename-upload.js"></script>
+  <script>
+    // Build three distinct File objects with identical original names but different contents
+    async function run() {
+      const resultsDiv = document.getElementById('results');
+      resultsDiv.innerHTML = '<div class="test-result info">Initializing...</div>';
+
+      // create three files named 'duplicate.pdf' with different text content
+      const contents = ['CONTENT-A', 'CONTENT-B', 'CONTENT-C'];
+      const files = contents.map((c, i) => new File([c], 'duplicate.pdf', { type: 'application/pdf' }));
+
+      // programmatically add files
+      RenameUpload.addFiles(files);
+
+      resultsDiv.innerHTML = '<div class="test-result info">Files added to uploader. Processing...</div>';
+
+      // process (rename)
+      await RenameUpload.process();
+
+      resultsDiv.innerHTML = '<div class="test-result info">Processing complete. Verifying contents...</div>';
+
+      // Get internal state
+      const state = RenameUpload._internal();
+
+      // we will read each renamedFile as text and compare
+      const failures = [];
+
+      for (let i = 0; i < state.length; i++) {
+        const u = state[i];
+        const renamed = u.renamedFile;
+        if (!renamed) {
+          failures.push(`Item ${i+1}: renamedFile missing`);
+          continue;
+        }
+
+        // read content as text (Blobs created from small strings are readable)
+        const text = await renamed.text();
+        const expected = contents[i];
+        if (text !== expected) {
+          failures.push(`Mismatch for ${u.newName}: expected "${expected}", got "${text}"`);
+        }
+      }
+
+      if (failures.length === 0) {
+        resultsDiv.innerHTML = '<div class="test-result pass">✓ All renamed files preserved original content in correct order.</div>';
+      } else {
+        resultsDiv.innerHTML = '<div class="test-result fail"><strong>Failures:</strong><br>' + failures.join('<br>') + '</div>';
+      }
+
+      // Show mapping
+      const mapping = state.map((u, i) => `<li>${u.originalName} → ${u.newName} (size ${u.size})</li>`).join('');
+      resultsDiv.insertAdjacentHTML('beforeend', `<h3>Mapping</h3><ul>${mapping}</ul>`);
+    }
+
+    document.getElementById('runTest').addEventListener('click', run);
+
+    // Auto-run tests when the page loads so CI / Simple Browser can execute without manual click
+    window.addEventListener('DOMContentLoaded', () => {
+      // small timeout to ensure RenameUpload API initialized
+      setTimeout(() => {
+        try { run(); } catch (e) { console.error('Auto-run test error', e); }
+      }, 100);
+    });
+  </script>
+</body>
+</html>

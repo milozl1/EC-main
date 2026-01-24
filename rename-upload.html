@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Batch Rename Upload — Delivery Notes</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    /* Basic layout */
+    :root{--bg:#f7fafc;--card:#ffffff;--muted:#6b7280;--accent:#2b6cff;--danger:#ef4444}
+    body{font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial; background:var(--bg); margin:0;padding:28px;color:#0f172a}
+    .container{max-width:980px;margin:0 auto;background:var(--card);border-radius:12px;padding:20px;box-shadow:0 6px 20px rgba(2,6,23,0.06)}
+  .header h1{margin:0;font-size:18px}
+  /* Subtitle made black as requested */
+  .subtitle{margin:6px 0 0;color:#000;font-size:13px}
+
+    /* Upload area */
+    .drop-zone{border:2px dashed rgba(15,23,42,0.06);border-radius:10px;padding:18px;display:flex;flex-direction:column;align-items:center;gap:8px;background:linear-gradient(180deg, rgba(11,122,204,0.01),transparent)}
+    .drop-zone.drag-over{background:rgba(44,115,255,0.04);border-color:rgba(44,115,255,0.3)}
+    .muted{color:var(--muted);font-size:13px}
+
+  /* Buttons */
+  /* Make default buttons blue with white text (select/download buttons) */
+  .btn{border:0;padding:8px 12px;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer;font-weight:600}
+  .btn-primary{background:var(--accent);color:#fff}
+    .btn-success{background:#10b981;color:#fff}
+    .btn-danger{background:var(--danger);color:#fff}
+    .btn[disabled]{opacity:0.55;cursor:not-allowed}
+    .btn-small{padding:6px 8px;font-size:13px;border-radius:6px}
+
+    /* Files table */
+    .files-section{margin-top:18px}
+    table.table{width:100%;border-collapse:separate;border-spacing:0 10px}
+    table.table thead th{font-weight:700;text-align:left;padding:8px 12px;color:#0b1220}
+    table.table tbody tr{background:#fbfdff;border-radius:8px;box-shadow:0 6px 12px rgba(11,17,24,0.04)}
+    table.table td{padding:12px;border-top:0;border-bottom:0}
+
+    /* Column sizing and alignment */
+    table.table td:nth-child(1), table.table th:nth-child(1){width:56px;text-align:center}
+    table.table td:nth-child(2), table.table th:nth-child(2){width:36%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    table.table td:nth-child(3), table.table th:nth-child(3){width:36%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    table.table td:nth-child(4), table.table th:nth-child(4){width:120px;text-align:right;color:var(--muted)}
+    table.table td:nth-child(5), table.table th:nth-child(5){width:160px;text-align:center}
+
+    /* Actions cell */
+    table.table td .btn{min-width:86px}
+
+    /* Responsive: allow horizontal scroll on small screens */
+    @media (max-width:720px){
+      table.table thead{display:none}
+      table.table, table.table tbody, table.table tr, table.table td{display:block;width:100%}
+      table.table tr{margin-bottom:10px;padding:12px}
+      table.table td{padding:8px;border-radius:8px}
+      table.table td:nth-child(1){text-align:left}
+      table.table td:nth-child(4){text-align:left}
+      table.table td:nth-child(5){text-align:left}
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1>📁 Batch Upload & Rename</h1>
+      <p class="subtitle">Upload multiple files (same name allowed). Each file will be renamed using the format <code>yy.mm.dd_index.ext</code>.</p>
+    </header>
+
+    <section class="upload-section">
+      <div id="dropZone" class="drop-zone">
+  <p>Drag PDF files here or</p>
+  <button id="selectBtn" class="btn">Select files</button>
+        <input id="fileInput" type="file" accept="application/pdf" multiple style="display:none;">
+  <p class="muted">Files with the same name are allowed — each will receive a unique sequential name.</p>
+      </div>
+
+      <div style="margin-top:12px; display:flex; gap:8px;">
+  <button id="processBtn" class="btn btn-primary" disabled>Process & Rename</button>
+  <button id="zipBtn" class="btn btn-success" disabled>Download All (ZIP)</button>
+  <button id="clearBtn" class="btn btn-danger" disabled>Clear</button>
+      </div>
+    </section>
+
+    <section id="listSection" class="files-section" style="display:none; margin-top:18px;">
+      <h3>Uploaded files</h3>
+      <table id="filesTable" class="table">
+        <thead>
+          <tr><th>#</th><th>Original name</th><th>New name</th><th>Size</th><th>Actions</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <footer class="footer">
+  <p class="muted">You can open this page locally (file://). No server required.</p>
+    </footer>
+  </div>
+
+  <script src="rename-upload.js"></script>
+</body>
+</html>
