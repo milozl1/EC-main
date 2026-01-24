@@ -2,97 +2,486 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Batch upload and rename files with sequential naming format yy.mm.dd_index.ext" />
   <title>Batch Rename Upload — Delivery Notes</title>
-  <link rel="stylesheet" href="styles.css">
-  <style>
-    /* Basic layout */
-    :root{--bg:#f7fafc;--card:#ffffff;--muted:#6b7280;--accent:#2b6cff;--danger:#ef4444}
-    body{font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial; background:var(--bg); margin:0;padding:28px;color:#0f172a}
-    .container{max-width:980px;margin:0 auto;background:var(--card);border-radius:12px;padding:20px;box-shadow:0 6px 20px rgba(2,6,23,0.06)}
-  .header h1{margin:0;font-size:18px}
-  /* Subtitle made black as requested */
-  .subtitle{margin:6px 0 0;color:#000;font-size:13px}
 
-    /* Upload area */
-    .drop-zone{border:2px dashed rgba(15,23,42,0.06);border-radius:10px;padding:18px;display:flex;flex-direction:column;align-items:center;gap:8px;background:linear-gradient(180deg, rgba(11,122,204,0.01),transparent)}
-    .drop-zone.drag-over{background:rgba(44,115,255,0.04);border-color:rgba(44,115,255,0.3)}
-    .muted{color:var(--muted);font-size:13px}
-
-  /* Buttons */
-  /* Make default buttons blue with white text (select/download buttons) */
-  .btn{border:0;padding:8px 12px;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer;font-weight:600}
-  .btn-primary{background:var(--accent);color:#fff}
-    .btn-success{background:#10b981;color:#fff}
-    .btn-danger{background:var(--danger);color:#fff}
-    .btn[disabled]{opacity:0.55;cursor:not-allowed}
-    .btn-small{padding:6px 8px;font-size:13px;border-radius:6px}
-
-    /* Files table */
-    .files-section{margin-top:18px}
-    table.table{width:100%;border-collapse:separate;border-spacing:0 10px}
-    table.table thead th{font-weight:700;text-align:left;padding:8px 12px;color:#0b1220}
-    table.table tbody tr{background:#fbfdff;border-radius:8px;box-shadow:0 6px 12px rgba(11,17,24,0.04)}
-    table.table td{padding:12px;border-top:0;border-bottom:0}
-
-    /* Column sizing and alignment */
-    table.table td:nth-child(1), table.table th:nth-child(1){width:56px;text-align:center}
-    table.table td:nth-child(2), table.table th:nth-child(2){width:36%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    table.table td:nth-child(3), table.table th:nth-child(3){width:36%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    table.table td:nth-child(4), table.table th:nth-child(4){width:120px;text-align:right;color:var(--muted)}
-    table.table td:nth-child(5), table.table th:nth-child(5){width:160px;text-align:center}
-
-    /* Actions cell */
-    table.table td .btn{min-width:86px}
-
-    /* Responsive: allow horizontal scroll on small screens */
-    @media (max-width:720px){
-      table.table thead{display:none}
-      table.table, table.table tbody, table.table tr, table.table td{display:block;width:100%}
-      table.table tr{margin-bottom:10px;padding:12px}
-      table.table td{padding:8px;border-radius:8px}
-      table.table td:nth-child(1){text-align:left}
-      table.table td:nth-child(4){text-align:left}
-      table.table td:nth-child(5){text-align:left}
-    }
-  </style>
+  <!-- External Libraries -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+  <style>
+    /* === CSS Variables === */
+    :root {
+      --bg: #f7fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --success: #10b981;
+      --success-hover: #059669;
+      --danger: #ef4444;
+      --danger-hover: #dc2626;
+      --warning: #f59e0b;
+      --border: rgba(15, 23, 42, 0.08);
+      --shadow: rgba(2, 6, 23, 0.06);
+      --radius: 10px;
+    }
+
+    /* === Reset & Base === */
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg);
+      margin: 0;
+      padding: 24px;
+      color: var(--text);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* === Layout === */
+    .container {
+      max-width: 980px;
+      margin: 0 auto;
+      background: var(--card);
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 6px 20px var(--shadow);
+    }
+
+    /* === Header === */
+    .header {
+      margin-bottom: 20px;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header .subtitle {
+      margin: 8px 0 0;
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .header .subtitle code {
+      background: rgba(37, 99, 235, 0.1);
+      color: var(--accent);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'SF Mono', Monaco, Consolas, monospace;
+      font-size: 13px;
+    }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      transition: color 0.15s;
+    }
+
+    .back-link:hover {
+      color: var(--accent-hover);
+    }
+
+    /* === Drop Zone === */
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 28px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      background: linear-gradient(180deg, rgba(37, 99, 235, 0.02), transparent);
+      transition: border-color 0.2s, background 0.2s;
+      cursor: pointer;
+    }
+
+    .drop-zone:hover {
+      border-color: rgba(37, 99, 235, 0.3);
+    }
+
+    .drop-zone:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .drop-zone.drag-over {
+      background: rgba(37, 99, 235, 0.06);
+      border-color: var(--accent);
+    }
+
+    .drop-zone p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .drop-zone .icon {
+      font-size: 32px;
+      opacity: 0.6;
+    }
+
+    /* === Buttons === */
+    .btn {
+      border: 0;
+      padding: 10px 16px;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 14px;
+      font-family: inherit;
+      transition: background 0.15s, transform 0.1s, opacity 0.15s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .btn:hover:not(:disabled) {
+      background: var(--accent-hover);
+    }
+
+    .btn:active:not(:disabled) {
+      transform: scale(0.98);
+    }
+
+    .btn:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: var(--accent-hover);
+    }
+
+    .btn-success {
+      background: var(--success);
+    }
+
+    .btn-success:hover:not(:disabled) {
+      background: var(--success-hover);
+    }
+
+    .btn-danger {
+      background: var(--danger);
+    }
+
+    .btn-danger:hover:not(:disabled) {
+      background: var(--danger-hover);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-small {
+      padding: 6px 10px;
+      font-size: 13px;
+      border-radius: 6px;
+    }
+
+    /* === Button Group === */
+    .btn-group {
+      margin-top: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    /* === Files Section === */
+    .files-section {
+      margin-top: 24px;
+    }
+
+    .files-section h3 {
+      margin: 0 0 12px;
+      font-size: 16px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .file-counter {
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    /* === Table === */
+    .table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0 8px;
+    }
+
+    .table thead th {
+      font-weight: 600;
+      text-align: left;
+      padding: 10px 14px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .table tbody tr {
+      background: #fafbfc;
+      border-radius: 8px;
+      transition: background 0.15s, box-shadow 0.15s;
+    }
+
+    .table tbody tr:hover {
+      background: #f1f5f9;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    }
+
+    .table td {
+      padding: 14px;
+      vertical-align: middle;
+    }
+
+    .table td:first-child {
+      border-radius: 8px 0 0 8px;
+    }
+
+    .table td:last-child {
+      border-radius: 0 8px 8px 0;
+    }
+
+    /* Column sizing */
+    .table td:nth-child(1),
+    .table th:nth-child(1) {
+      width: 50px;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .table td:nth-child(2),
+    .table th:nth-child(2) {
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .table td:nth-child(3),
+    .table th:nth-child(3) {
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    .table td:nth-child(4),
+    .table th:nth-child(4) {
+      width: 100px;
+      text-align: right;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .table td:nth-child(5),
+    .table th:nth-child(5) {
+      width: 140px;
+      text-align: center;
+    }
+
+    .table td:nth-child(5) {
+      display: flex;
+      gap: 6px;
+      justify-content: center;
+    }
+
+    /* === Footer === */
+    .footer {
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+
+    .footer p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    /* === Responsive === */
+    @media (max-width: 720px) {
+      body {
+        padding: 16px;
+      }
+
+      .container {
+        padding: 16px;
+      }
+
+      .table thead {
+        display: none;
+      }
+
+      .table,
+      .table tbody,
+      .table tr,
+      .table td {
+        display: block;
+        width: 100%;
+      }
+
+      .table tbody tr {
+        margin-bottom: 12px;
+        padding: 12px;
+        border-radius: 8px;
+      }
+
+      .table td {
+        padding: 6px 0;
+        text-align: left !important;
+        max-width: none !important;
+        border-radius: 0 !important;
+      }
+
+      .table td:nth-child(1) {
+        display: none;
+      }
+
+      .table td:nth-child(2)::before {
+        content: 'Original: ';
+        font-weight: 600;
+        color: var(--muted);
+      }
+
+      .table td:nth-child(3)::before {
+        content: 'New name: ';
+        font-weight: 600;
+        color: var(--muted);
+      }
+
+      .table td:nth-child(4)::before {
+        content: 'Size: ';
+        font-weight: 600;
+        color: var(--muted);
+      }
+
+      .table td:nth-child(5) {
+        justify-content: flex-start;
+        margin-top: 8px;
+      }
+
+      .btn-group {
+        flex-direction: column;
+      }
+
+      .btn-group .btn {
+        width: 100%;
+      }
+    }
+
+    /* === Accessibility === */
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        animation: none !important;
+        transition: none !important;
+      }
+    }
+
+    /* High contrast mode */
+    @media (prefers-contrast: high) {
+      .drop-zone {
+        border-width: 3px;
+      }
+
+      .btn {
+        border: 2px solid currentColor;
+      }
+    }
+  </style>
 </head>
 <body>
   <div class="container">
+    <a href="menu.html" class="back-link" aria-label="Back to menu">
+      ← Back to Menu
+    </a>
+
     <header class="header">
-      <h1>📁 Batch Upload & Rename</h1>
-      <p class="subtitle">Upload multiple files (same name allowed). Each file will be renamed using the format <code>yy.mm.dd_index.ext</code>.</p>
+      <h1>
+        <span aria-hidden="true">📁</span>
+        Batch Upload & Rename
+      </h1>
+      <p class="subtitle">
+        Upload multiple files (same name allowed). Each file will be renamed using the format <code>yy.mm.dd_index.ext</code>.
+      </p>
     </header>
 
-    <section class="upload-section">
-      <div id="dropZone" class="drop-zone">
-  <p>Drag PDF files here or</p>
-  <button id="selectBtn" class="btn">Select files</button>
-        <input id="fileInput" type="file" accept="application/pdf" multiple style="display:none;">
-  <p class="muted">Files with the same name are allowed — each will receive a unique sequential name.</p>
+    <section class="upload-section" aria-label="File upload">
+      <div id="dropZone" class="drop-zone" tabindex="0" role="button" aria-label="Drop files here or click to select">
+        <span class="icon" aria-hidden="true">📄</span>
+        <p>Drag files here or click to select</p>
+        <button id="selectBtn" class="btn" type="button">Select Files</button>
+        <input id="fileInput" type="file" accept=".pdf,application/pdf" multiple style="display:none;" aria-hidden="true">
+        <p style="font-size: 12px;">Files with the same name are allowed — each will receive a unique sequential name.</p>
       </div>
 
-      <div style="margin-top:12px; display:flex; gap:8px;">
-  <button id="processBtn" class="btn btn-primary" disabled>Process & Rename</button>
-  <button id="zipBtn" class="btn btn-success" disabled>Download All (ZIP)</button>
-  <button id="clearBtn" class="btn btn-danger" disabled>Clear</button>
+      <div class="btn-group">
+        <button id="processBtn" class="btn btn-primary" disabled type="button">
+          ⚡ Process & Rename
+        </button>
+        <button id="zipBtn" class="btn btn-success" disabled type="button">
+          📦 Download All (ZIP)
+        </button>
+        <button id="clearBtn" class="btn btn-danger" disabled type="button">
+          🗑️ Clear All
+        </button>
       </div>
     </section>
 
-    <section id="listSection" class="files-section" style="display:none; margin-top:18px;">
-      <h3>Uploaded files</h3>
-      <table id="filesTable" class="table">
+    <section id="listSection" class="files-section" style="display:none;" aria-label="Uploaded files list">
+      <h3>
+        Uploaded Files
+        <span id="fileCounter" class="file-counter"></span>
+      </h3>
+      <table id="filesTable" class="table" role="table" aria-label="File list">
         <thead>
-          <tr><th>#</th><th>Original name</th><th>New name</th><th>Size</th><th>Actions</th></tr>
+          <tr>
+            <th scope="col">#</th>
+            <th scope="col">Original Name</th>
+            <th scope="col">New Name</th>
+            <th scope="col">Size</th>
+            <th scope="col">Actions</th>
+          </tr>
         </thead>
         <tbody></tbody>
       </table>
     </section>
 
     <footer class="footer">
-  <p class="muted">You can open this page locally (file://). No server required.</p>
+      <p>💡 This page works offline — no server required. Your files never leave your browser.</p>
     </footer>
   </div>
 
