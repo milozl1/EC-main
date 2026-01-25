@@ -3,42 +3,178 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EC Tools — Menu</title>
-    <meta http-equiv="refresh" content="0; url=menu.html" />
-    <style>
-        :root { color-scheme: light dark; }
-        body {
-            font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-            margin: 0;
-            min-height: 100vh;
-            display: grid;
-            place-items: center;
-            padding: 24px;
-        }
-        .card {
-            max-width: 560px;
-            width: 100%;
-            border: 1px solid rgba(0,0,0,.12);
-            border-radius: 12px;
-            padding: 20px;
-        }
-        h1 { margin: 0 0 8px; font-size: 18px; }
-        p { margin: 0 0 12px; opacity: .85; }
-        a { color: inherit; }
-    </style>
-    <script>
-        // GitHub Pages loads the repository root as index.html.
-        // We want the app entrypoint to be menu.html.
-        window.location.replace('menu.html');
-    </script>
+    <title>Delivery Note Extractor - PDF to Excel</title>
+    <link rel="stylesheet" href="styles.css">
+    
+    <!-- PDF.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- SheetJS for Excel generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- JSZip for ZIP creation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- FileSaver for downloads -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 </head>
 <body>
-    <div class="card">
-        <h1>Redirecting…</h1>
-        <p>Opening <a href="menu.html">menu.html</a>…</p>
-        <noscript>
-            <p><strong>JavaScript is disabled.</strong> Please open <a href="menu.html">menu.html</a>.</p>
-        </noscript>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>📄 Delivery Note Extractor</h1>
+            <p class="subtitle">Upload PDF files to extract Delivery Notes and generate Excel files</p>
+            <p class="version-badge">v7.2 Improved Auto-Fix</p>
+        </header>
+
+        <!-- Library Loading Status -->
+        <div id="libraryStatus" class="library-status" style="display: none;">
+            <div class="library-error">
+                <span>⚠️ Error loading libraries. Please check your internet connection.</span>
+            </div>
+        </div>
+
+        <!-- Upload Section -->
+        <section class="upload-section">
+            <div class="drop-zone" id="dropZone">
+                <div class="drop-zone-content">
+                    <span class="drop-icon">📁</span>
+                    <p class="drop-text">Drag PDF files here or</p>
+                    <button type="button" class="upload-btn" id="selectFilesBtn">
+                        Select Files
+                    </button>
+                    <p class="drop-hint">Accepts .pdf files (max 500 files)</p>
+                </div>
+            </div>
+            <input type="file" id="fileInput" multiple accept=".pdf,application/pdf" style="display: none;">
+        </section>
+
+        <!-- File List Section -->
+        <section class="files-section" id="filesSection" style="display: none;">
+            <div class="section-header">
+                <h2>📋 Uploaded Files (<span id="fileCount">0</span>)</h2>
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="🔍 Search files..." class="search-input">
+                </div>
+                <div class="action-buttons">
+                    <button type="button" class="btn btn-primary" id="processAllBtn" disabled>
+                        ⚙️ Process All
+                    </button>
+                    <button type="button" class="btn btn-success" id="downloadAllBtn" disabled>
+                        📥 Download All (ZIP)
+                    </button>
+                    <button type="button" class="btn btn-info" id="exportReportBtn">
+                        📊 Export Report
+                    </button>
+                    <button type="button" class="btn btn-danger" id="clearAllBtn">
+                        🗑️ Clear All
+                    </button>
+                </div>
+            </div>
+
+            <!-- Global Progress -->
+            <div class="global-progress" id="globalProgress" style="display: none;">
+                <div class="progress-info">
+                    <span id="progressText">Processing: 0 / 0</span>
+                    <span id="progressPercent">0%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+
+            <!-- File List Table -->
+            <div class="table-container">
+                <table class="files-table">
+                    <thead>
+                        <tr>
+                            <th data-sort="name" class="sortable" title="Click to sort by file name">File Name ↕</th>
+                            <th data-sort="size" class="sortable" title="Click to sort by file size">Size ↕</th>
+                            <th data-sort="status" class="sortable" title="Click to sort by status">Status ↕</th>
+                            <th class="col-accepted" title="Valid 8-digit delivery notes">Accepted (8d)</th>
+                            <th class="col-excluded" title="9-10 digit numbers (too long)">Excluded (9-10d)</th>
+                            <th class="col-invalid" title="Invalid entries (letters, special chars, wrong length)">Invalid</th>
+                            <th class="col-duplicate" title="Duplicate entries found">Duplicates</th>
+                            <th class="col-corrected" title="7-digit numbers auto-corrected to 8 digits">Auto-Fixes</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="fileTableBody">
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Validation Rules Info -->
+            <div class="validation-info">
+                <h4>📋 Validation Rules</h4>
+                <ul>
+                    <li><span class="rule-badge accepted">✅ Accepted</span> Exactly 8 digits → Exported to Excel</li>
+                    <li><span class="rule-badge excluded">⏭️ Excluded</span> 9-10 digits → Too long, skipped</li>
+                    <li><span class="rule-badge invalid">❌ Invalid</span> &lt;7 digits, &gt;10 digits, letters, or special characters</li>
+                    <li><span class="rule-badge corrected">🔧 Auto-Fix</span> 7 digits → Add leading digit based on pattern</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Dashboard Summary -->
+        <section class="dashboard-section" id="dashboardSection" style="display: none;">
+            <h2>📊 Dashboard Summary <small>(Click cards to view details)</small></h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <span class="stat-icon">📄</span>
+                    <div class="stat-info">
+                        <span class="stat-value" id="totalFiles">0</span>
+                        <span class="stat-label">Total Files</span>
+                    </div>
+                </div>
+                <div class="stat-card success clickable" data-type="accepted" title="Click to view all accepted delivery notes">
+                    <span class="stat-icon">✅</span>
+                    <div class="stat-info">
+                        <span class="stat-value" id="totalAccepted">0</span>
+                        <span class="stat-label">Accepted (8 digits)</span>
+                    </div>
+                </div>
+                <div class="stat-card warning clickable" data-type="excluded" title="Click to view all excluded entries">
+                    <span class="stat-icon">⏭️</span>
+                    <div class="stat-info">
+                        <span class="stat-value" id="totalExcluded">0</span>
+                        <span class="stat-label">Excluded (9-10 digits)</span>
+                    </div>
+                </div>
+                <div class="stat-card danger clickable" data-type="invalid" title="Click to view all invalid entries">
+                    <span class="stat-icon">❌</span>
+                    <div class="stat-info">
+                        <span class="stat-value" id="totalInvalid">0</span>
+                        <span class="stat-label">Invalid</span>
+                    </div>
+                </div>
+                <div class="stat-card info clickable" data-type="duplicates" title="Click to view all duplicate entries">
+                    <span class="stat-icon">🔄</span>
+                    <div class="stat-info">
+                        <span class="stat-value" id="totalDuplicates">0</span>
+                        <span class="stat-label">Duplicates</span>
+                    </div>
+                </div>
+                <div class="stat-card auto-correct clickable" data-type="autocorrections" title="Click to view all auto-corrections">
+                    <span class="stat-icon">🔧</span>
+                    <div class="stat-info">
+                        <span class="stat-value" id="totalAutoCorrections">0</span>
+                        <span class="stat-label">Auto-Corrections</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Errors Section -->
+        <section class="errors-section" id="errorsSection" style="display: none;">
+            <h2>⚠️ Errors & Auto-Corrections Report</h2>
+            <div id="errorsContainer"></div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Delivery Note Extractor v7.2 </p>
+            <p class="footer-hint">Created by Zlatan Milosevic, Jan 2026, Forvia Hella</p>
+        </footer>
     </div>
+
+    <script src="app.js"></script>
 </body>
 </html>
