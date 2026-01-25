@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * DELIVERY NOTE EXTRACTOR - APPLICATION v7.0 (Robust Extraction)
+ * DELIVERY NOTE EXTRACTOR - APPLICATION v7.2 (Improved Auto-Fix)
  * ============================================================================
  * 
  * APPROACH: Extract ALL 8-digit numbers from PDF, then validate
@@ -9,8 +9,11 @@
  * RULES:
  * - 8 digits: ACCEPTED (exported to Excel)
  * - 9-10 digits: EXCLUDED (too long, likely Transport ID)
- * - 7 digits: AUTO-CORRECT if pattern found, else INVALID
+ * - 7 digits: AUTO-CORRECT if pattern found AND first digit differs, else INVALID
  * - Other: INVALID
+ * 
+ * v7.2 UPDATE: If a 7-digit number already starts with the dominant digit,
+ *              it means the LAST digit is missing (not first) → mark INVALID
  * ============================================================================
  */
 
@@ -311,6 +314,23 @@ function validateDeliveryNotes(extractionResult) {
         
         for (const pending of pending7Digit) {
             if (dominantDigit) {
+                // =====================================================================
+                // NEW CHECK (v7.2): If the 7-digit number ALREADY starts with the
+                // dominant digit, it means the LAST digit is missing (not the first).
+                // In this case we CANNOT auto-correct → mark as INVALID.
+                // Example: dominantDigit = '2', pending = '2715703'
+                //   → '2715703' already starts with '2', so prepending '2' would be wrong
+                //   → the missing digit is at the END, not the beginning
+                // =====================================================================
+                if (pending[0] === dominantDigit) {
+                    results.invalid.push({
+                        value: pending,
+                        reason: `7 digits - already starts with '${dominantDigit}' (missing last digit, not first)`
+                    });
+                    console.log(`  ❌ Cannot auto-correct: ${pending} (already starts with '${dominantDigit}' - missing last digit)`);
+                    continue;
+                }
+                
                 const corrected = dominantDigit + pending;
                 
                 if (!seen.has(corrected)) {
@@ -1157,7 +1177,7 @@ function init() {
     }, 1000);
     
     initEventListeners();
-    console.log('🚀 Delivery Note Extractor v7.0 (Robust Extraction) initialized');
+    console.log('🚀 Delivery Note Extractor v7.2 (Improved Auto-Fix) initialized');
 }
 
 if (document.readyState === 'loading') {
@@ -1315,6 +1335,41 @@ window.runTests = function() {
         assertEqual(result.accepted.length, 11, 'All 11 real values should be accepted');
         assertEqual(result.excluded.length, 0, 'None should be excluded');
         assertEqual(result.invalid.length, 0, 'None should be invalid');
+    });
+    
+    // ==========================================================================
+    // NEW TEST (v7.2): 7-digit number that ALREADY starts with dominant digit
+    // should be marked INVALID (missing last digit, not first)
+    // ==========================================================================
+    test('7-digit already starting with dominant digit should be INVALID (v7.2)', () => {
+        // 8-digit notes establish dominant first digit = '2'
+        // '2715703' has 7 digits and ALREADY starts with '2'
+        // → cannot prepend '2' (would mean missing last digit) → INVALID
+        const result = validateDeliveryNotes(['26996798', '27008029', '27005099', '2715703']);
+        
+        // Should have 3 accepted (the 8-digit ones)
+        assertEqual(result.accepted.length, 3, 'Accepted count (only 8-digit)');
+        
+        // Should have 0 auto-corrections (because '2715703' starts with '2')
+        assertEqual(result.autoCorrections.length, 0, 'Auto-corrections count should be 0');
+        
+        // Should have 1 invalid (the 7-digit '2715703')
+        assertEqual(result.invalid.length, 1, 'Invalid count should be 1');
+        assertEqual(result.invalid[0].value, '2715703', 'Invalid value');
+        assertEqual(result.invalid[0].reason.includes('already starts with'), true, 'Reason should mention already starts with');
+    });
+    
+    // Test 11: 7-digit NOT starting with dominant digit SHOULD be auto-corrected
+    test('7-digit NOT starting with dominant digit should be AUTO-CORRECTED', () => {
+        // Dominant digit = '2', pending = '7180890' (starts with '7', not '2')
+        // → CAN prepend '2' → '27180890'
+        const result = validateDeliveryNotes(['26996798', '27008029', '7180890']);
+        
+        assertEqual(result.autoCorrections.length, 1, 'Auto-corrections count');
+        assertEqual(result.autoCorrections[0].original, '7180890', 'Original');
+        assertEqual(result.autoCorrections[0].corrected, '27180890', 'Corrected');
+        assertEqual(result.accepted.length, 3, 'Accepted count (2 original + 1 corrected)');
+        assertEqual(result.invalid.length, 0, 'Invalid count should be 0');
     });
     
     // Summary

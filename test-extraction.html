@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Extraction Test Suite - v7.1 (Duplicates)</title>
+    <title>Extraction Test Suite - v7.2 (Improved Auto-Fix)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
         body {
@@ -91,8 +91,8 @@
     </style>
 </head>
 <body>
-    <h1>🧪 Delivery Note Extraction Test Suite - v7.1</h1>
-    <p><strong>Focus:</strong> Duplicate Detection & Reporting</p>
+    <h1>🧪 Delivery Note Extraction Test Suite - v7.2</h1>
+    <p><strong>Focus:</strong> Improved Auto-Fix (skip if 7-digit already starts with dominant digit)</p>
     
     <div class="test-section">
         <h2>1. Unit Tests - Duplicate Detection Logic</h2>
@@ -233,6 +233,15 @@
                 
                 for (const pending of pending7Digit) {
                     if (dominantDigit) {
+                        // v7.2: If 7-digit already starts with dominant digit → INVALID
+                        if (pending[0] === dominantDigit) {
+                            results.invalid.push({
+                                value: pending,
+                                reason: `7 digits - already starts with '${dominantDigit}' (missing last digit, not first)`
+                            });
+                            continue;
+                        }
+                        
                         const corrected = dominantDigit + pending;
                         
                         if (!seen.has(corrected)) {
