@@ -447,7 +447,8 @@ function generateExcel(deliveryNotes) {
     const ws = XLSX.utils.aoa_to_sheet(data);
     ws['!cols'] = [{ wch: 15 }];
     
-    XLSX.utils.book_append_sheet(wb, ws, 'DeliveryNotes');
+    // Use standard default sheet name 'Sheet1' for compatibility
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
     
     const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     return new Blob([wbout], { 
