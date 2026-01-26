@@ -1,8 +1,8 @@
 /* rename-upload.js v2.0
-   - Upload multiple files (same-name allowed)
-   - Rename each file to format: yy.mm.dd_index.ext
-   - Individual download + Download All (ZIP)
-   - Improved: validation, error handling, security, UX
+  - Upload multiple files (same-name allowed)
+  - Rename each file to format: yymmdd_index.ext
+  - Individual download + Download All (ZIP)
+  - Improved: validation, error handling, security, UX
 */
 
 (function () {
@@ -15,7 +15,7 @@
     maxTotalSizeMB: 500,              // Maximum total size in MB
     allowedExtensions: ['.pdf'],      // Allowed file extensions (empty = allow all)
     strictExtensionCheck: false,      // If true, reject non-matching extensions
-    dateFormat: 'yy.mm.dd'            // Date format used in renamed files
+    dateFormat: 'yymmdd'            // Date format used in renamed files
   };
 
   // === DOM Elements ===
@@ -34,15 +34,15 @@
   // === Utility Functions ===
 
   /**
-   * Format date as yy.mm.dd
+   * Format date as yymmdd
    * @param {Date} d - Date object (defaults to now)
-   * @returns {string} Formatted date string
+   * @returns {string} Formatted date string e.g. '240126' (for 26 Jan 2024)
    */
   function formatShortDate(d = new Date()) {
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
     const yy = String(d.getFullYear()).slice(-2);
-    return `${yy}.${mm}.${dd}`;
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yy}${mm}${dd}`;
   }
 
   /**
