@@ -1,0 +1,952 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>CR Processor v3.3</title>
+  <link rel="stylesheet" href="CR_styles.css" />
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --success: #16a34a;
+      --info: #0891b2;
+      --warning: #f59e0b;
+      --danger: #dc2626;
+      --gray-50: #f8fafc;
+      --gray-100: #f1f5f9;
+      --gray-200: #e2e8f0;
+      --gray-300: #cbd5e1;
+      --gray-400: #94a3b8;
+      --gray-500: #64748b;
+      --gray-600: #475569;
+      --gray-700: #334155;
+      --gray-800: #1e293b;
+      --gray-900: #0f172a;
+    }
+    
+    * { box-sizing: border-box; }
+    
+    body {
+      font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      margin: 0;
+      background: linear-gradient(135deg, #f0f4f8 0%, #e2e8f0 100%);
+      color: var(--gray-800);
+      min-height: 100vh;
+    }
+    
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, #1e40af 0%, #3b82f6 50%, #0ea5e9 100%);
+      color: #fff;
+      padding: 32px;
+      border-radius: 16px;
+      margin-bottom: 24px;
+      text-align: center;
+      box-shadow: 0 10px 40px rgba(37, 99, 235, 0.3);
+    }
+    
+    .header h1 {
+      margin: 0 0 8px;
+      font-size: 2.25rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    
+    .header-subtitle {
+      margin: 0 0 16px;
+      opacity: 0.9;
+      font-size: 1.1rem;
+    }
+    
+    .version-badge {
+      display: inline-block;
+      background: rgba(255,255,255,0.2);
+      padding: 6px 16px;
+      border-radius: 24px;
+      font-size: 0.9rem;
+      backdrop-filter: blur(4px);
+    }
+    
+    /* Main Layout Grid */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+    
+    @media (max-width: 1024px) {
+      .main-grid { grid-template-columns: 1fr; }
+    }
+    
+    /* Card Style */
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+    
+    .card-header {
+      background: var(--gray-50);
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--gray-200);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .card-header h3 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--gray-700);
+    }
+    
+    .card-header .icon {
+      font-size: 1.25rem;
+    }
+    
+    .card-body {
+      padding: 20px;
+    }
+    
+    /* Upload Zone */
+    .upload-zone {
+      border: 3px dashed var(--gray-300);
+      border-radius: 12px;
+      padding: 40px 24px;
+      text-align: center;
+      transition: all 0.3s ease;
+      cursor: pointer;
+      background: var(--gray-50);
+      min-height: 200px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: var(--primary);
+      background: #eff6ff;
+    }
+    
+    .upload-zone.has-files {
+      border-style: solid;
+      border-color: var(--success);
+      background: #f0fdf4;
+    }
+    
+    .upload-zone .upload-icon {
+      font-size: 3rem;
+      margin-bottom: 12px;
+    }
+    
+    .upload-zone h4 {
+      margin: 0 0 8px;
+      font-size: 1.1rem;
+      color: var(--gray-700);
+    }
+    
+    .upload-zone p {
+      margin: 0;
+      color: var(--gray-500);
+      font-size: 0.9rem;
+    }
+    
+    .upload-zone input[type="file"] {
+      display: none;
+    }
+    
+    /* File List */
+    .file-list-preview {
+      max-height: 300px;
+      overflow-y: auto;
+      margin-top: 16px;
+    }
+    
+    .file-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      background: var(--gray-50);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      transition: background 0.2s;
+    }
+    
+    .file-item:hover {
+      background: var(--gray-100);
+    }
+    
+    .file-item .file-icon {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-weight: bold;
+      font-size: 0.7rem;
+    }
+    
+    .file-item .file-info {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .file-item .file-name {
+      font-weight: 500;
+      color: var(--gray-800);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    .file-item .file-size {
+      font-size: 0.8rem;
+      color: var(--gray-500);
+    }
+    
+    .file-item .remove-btn {
+      background: none;
+      border: none;
+      color: var(--gray-400);
+      cursor: pointer;
+      padding: 4px;
+      font-size: 1.2rem;
+      line-height: 1;
+    }
+    
+    .file-item .remove-btn:hover {
+      color: var(--danger);
+    }
+    
+    /* Buttons */
+    .btn {
+      padding: 12px 20px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.95rem;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+    }
+    
+    .btn-primary:hover:not(:disabled) {
+      background: var(--primary-dark);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+    }
+    
+    .btn-success {
+      background: var(--success);
+      color: #fff;
+    }
+    
+    .btn-success:hover:not(:disabled) {
+      background: #15803d;
+    }
+    
+    .btn-info {
+      background: var(--info);
+      color: #fff;
+    }
+    
+    .btn-info:hover:not(:disabled) {
+      background: #0e7490;
+    }
+    
+    .btn-secondary {
+      background: var(--gray-500);
+      color: #fff;
+    }
+    
+    .btn-secondary:hover:not(:disabled) {
+      background: var(--gray-600);
+    }
+    
+    .btn-lg {
+      padding: 16px 32px;
+      font-size: 1.1rem;
+    }
+    
+    .action-buttons {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 20px;
+    }
+    
+    /* Config Panel */
+    .config-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+    }
+    
+    .config-item {
+      position: relative;
+    }
+    
+    .config-item label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.85rem;
+      color: var(--gray-600);
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+    
+    .config-item input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--gray-300);
+      border-radius: 8px;
+      font-size: 0.95rem;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    
+    .config-item input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+    
+    /* Tooltip */
+    .tooltip-trigger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      background: var(--gray-300);
+      color: var(--gray-600);
+      border-radius: 50%;
+      font-size: 0.7rem;
+      font-weight: bold;
+      cursor: help;
+      position: relative;
+    }
+    
+    .tooltip-trigger:hover .tooltip-content {
+      visibility: visible;
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    
+    .tooltip-content {
+      visibility: hidden;
+      opacity: 0;
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%) translateY(4px);
+      background: var(--gray-900);
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 400;
+      width: 220px;
+      text-align: left;
+      z-index: 1000;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+      transition: all 0.2s ease;
+      line-height: 1.4;
+    }
+    
+    .tooltip-content::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 6px solid transparent;
+      border-top-color: var(--gray-900);
+    }
+    
+    /* Progress Section */
+    .progress-section {
+      margin-bottom: 24px;
+    }
+    
+    .progress-bar-container {
+      height: 12px;
+      background: var(--gray-200);
+      border-radius: 6px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+    
+    .progress-bar-fill {
+      height: 100%;
+      width: 0;
+      background: linear-gradient(90deg, #06b6d4, #3b82f6, #8b5cf6);
+      background-size: 200% 100%;
+      animation: shimmer 2s infinite;
+      transition: width 0.3s ease;
+      border-radius: 6px;
+    }
+    
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+    
+    .progress-text {
+      font-weight: 500;
+      color: var(--gray-600);
+      font-size: 0.9rem;
+    }
+    
+    /* Summary Stats */
+    .summary-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    
+    .stat-card {
+      background: var(--gray-50);
+      border-radius: 10px;
+      padding: 16px;
+      text-align: center;
+      border: 1px solid var(--gray-200);
+    }
+    
+    .stat-card .stat-value {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--gray-800);
+    }
+    
+    .stat-card .stat-label {
+      font-size: 0.8rem;
+      color: var(--gray-500);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .stat-card.success .stat-value { color: var(--success); }
+    .stat-card.warning .stat-value { color: var(--warning); }
+    .stat-card.danger .stat-value { color: var(--danger); }
+    
+    /* Results Console */
+    #resultsConsole {
+      background: var(--gray-900);
+      color: #e2e8f0;
+      padding: 16px;
+      border-radius: 10px;
+      min-height: 200px;
+      max-height: 400px;
+      overflow-y: auto;
+      font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+      font-size: 0.85rem;
+      line-height: 1.6;
+    }
+    
+    .entry {
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    
+    .entry:last-child {
+      border-bottom: none;
+    }
+    
+    /* Generated Files Section */
+    .generated-group {
+      background: var(--gray-50);
+      border: 1px solid var(--gray-200);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    
+    .generated-group h4 {
+      margin: 0 0 12px;
+      font-size: 0.95rem;
+      color: var(--gray-700);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .generated-group h4::before {
+      content: '📄';
+    }
+    
+    .generated-files {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    
+    .generated-file {
+      padding: 8px 14px;
+      background: #dbeafe;
+      color: #1e40af;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    
+    .generated-file:hover {
+      background: #bfdbfe;
+      transform: translateY(-1px);
+    }
+    
+    /* Manual Review Section */
+    .manual-messages {
+      background: #fef3c7;
+      border: 1px solid #fcd34d;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-top: 12px;
+    }
+    
+    .manual-messages h5 {
+      margin: 0 0 8px;
+      color: #92400e;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    
+    .manual-messages ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+    
+    .manual-messages li {
+      color: #92400e;
+      font-size: 0.85rem;
+      margin-bottom: 4px;
+    }
+    
+    /* Status Badges */
+    .status-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    
+    .status-pass { background: #dcfce7; color: #166534; }
+    .status-fail { background: #fee2e2; color: #991b1b; }
+    .status-warn { background: #fef9c3; color: #854d0e; }
+    
+    /* How It Works Section */
+    .how-it-works {
+      background: linear-gradient(135deg, #f0fdf4, #ecfdf5);
+      border: 1px solid #bbf7d0;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+    
+    .how-it-works h3 {
+      margin: 0 0 16px;
+      color: #166534;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+    
+    .step-item {
+      display: flex;
+      gap: 12px;
+    }
+    
+    .step-number {
+      width: 28px;
+      height: 28px;
+      background: #16a34a;
+      color: #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+    
+    .step-content h4 {
+      margin: 0 0 4px;
+      font-size: 0.9rem;
+      color: var(--gray-800);
+    }
+    
+    .step-content p {
+      margin: 0;
+      font-size: 0.8rem;
+      color: var(--gray-600);
+    }
+    
+    /* Divider */
+    .divider {
+      border: none;
+      border-top: 1px solid var(--gray-200);
+      margin: 20px 0;
+    }
+    
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 20px;
+      color: var(--gray-500);
+      font-size: 0.85rem;
+    }
+    
+    /* Hidden summary for backward compatibility */
+    #summary:not(:empty) {
+      background: #fff;
+      padding: 16px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    /* Legacy compatibility */
+    #progressBar { height: 12px; background: var(--gray-200); border-radius: 6px; overflow: hidden; margin-bottom: 8px; }
+    #progressBar > div { height: 100%; width: 0; background: linear-gradient(90deg, #06b6d4, #3b82f6, #8b5cf6); transition: width 0.3s; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <h1>🔍 CR Processor</h1>
+      <p class="header-subtitle">Hella Confirmation of Receipt — Automated Extraction & Smart PDF Splitting</p>
+      <div class="version-badge">v3.3 — Advanced Signature Detection with Stroke Analysis</div>
+    </header>
+
+    <!-- How It Works -->
+    <section class="how-it-works">
+      <h3>💡 How It Works</h3>
+      <div class="steps-grid">
+        <div class="step-item">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h4>Upload PDFs</h4>
+            <p>Drop merged PDF files containing multiple Confirmation of Receipt documents</p>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <h4>Auto-Detection</h4>
+            <p>System extracts CR numbers (EP1/H01 format) and verifies stamp & signature</p>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <h4>Smart Split</h4>
+            <p>Multi-page documents with same CR stay together, new CR = new file</p>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-number">4</div>
+          <div class="step-content">
+            <h4>Download</h4>
+            <p>Get individual PDFs named by CR number, ready for ERP upload</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Content Grid -->
+    <div class="main-grid">
+      <!-- Left Column: Upload & Files -->
+      <div class="card">
+        <div class="card-header">
+          <span class="icon">📁</span>
+          <h3>Document Upload</h3>
+        </div>
+        <div class="card-body">
+          <div class="upload-zone" id="uploadZone">
+            <div class="upload-icon">📄</div>
+            <h4>Drop PDF files here</h4>
+            <p>or click to browse • Supports merged multi-page PDFs</p>
+            <input id="inputFiles" type="file" accept=".pdf" multiple />
+          </div>
+          
+          <div class="file-list-preview" id="fileListPreview"></div>
+          
+          <div class="action-buttons">
+            <button id="runBtn" class="btn btn-primary btn-lg" disabled>
+              <span>▶</span> Process Documents
+            </button>
+            <button id="clearFilesBtn" class="btn btn-secondary">
+              <span>🗑</span> Clear All
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Settings -->
+      <div class="card">
+        <div class="card-header">
+          <span class="icon">⚙️</span>
+          <h3>Detection Settings</h3>
+        </div>
+        <div class="card-body">
+          <div class="config-grid">
+            <div class="config-item">
+              <label>
+                ROI Height (%)
+                <span class="tooltip-trigger">?
+                  <span class="tooltip-content">
+                    <strong>Region of Interest Height</strong><br>
+                    Percentage of page height to analyze for stamp/signature detection. 
+                    Default: 30% from the bottom of the page.
+                  </span>
+                </span>
+              </label>
+              <input type="number" id="roiHeight" value="30" min="10" max="50" step="5" />
+            </div>
+            
+            <div class="config-item">
+              <label>
+                Ink Threshold (%)
+                <span class="tooltip-trigger">?
+                  <span class="tooltip-content">
+                    <strong>General Ink Detection</strong><br>
+                    Minimum ink density to consider an area as containing meaningful content. 
+                    Lower = more sensitive.
+                  </span>
+                </span>
+              </label>
+              <input type="number" id="roiThreshold" value="2" min="0.5" max="10" step="0.5" />
+            </div>
+            
+            <div class="config-item">
+              <label>
+                Blue Ink (%)
+                <span class="tooltip-trigger">?
+                  <span class="tooltip-content">
+                    <strong>Stamp Detection Threshold</strong><br>
+                    Minimum blue ink density to detect company stamps. 
+                    Blue stamps are common in EU documents.
+                  </span>
+                </span>
+              </label>
+              <input type="number" id="blueThreshold" value="0.3" min="0.1" max="2" step="0.1" />
+            </div>
+            
+            <div class="config-item">
+              <label>
+                Signature (%)
+                <span class="tooltip-trigger">?
+                  <span class="tooltip-content">
+                    <strong>Signature Detection Threshold</strong><br>
+                    Minimum ink density in the signature area. 
+                    Signatures are typically black/dark ink strokes.
+                  </span>
+                </span>
+              </label>
+              <input type="number" id="signatureThreshold" value="0.15" min="0.05" max="1" step="0.05" />
+            </div>
+          </div>
+          
+          <hr class="divider">
+          
+          <div class="action-buttons" style="margin-top: 0;">
+            <button id="downloadZipBtn" class="btn btn-success" disabled>
+              <span>📦</span> Download All (ZIP)
+            </button>
+            <button id="downloadManifestCSVBtn" class="btn btn-info" disabled>
+              <span>📊</span> Export Manifest (CSV)
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Progress & Results Section -->
+    <section class="files-section">
+      <div id="summary"></div>
+      <div id="progressBar"><div></div></div>
+      <div id="progressText">Ready</div>
+      <div id="fileList"></div>
+      <div id="manualList"></div>
+    </section>
+
+    <!-- Results Console -->
+    <section class="card" style="margin-top: 24px;">
+      <div class="card-header">
+        <span class="icon">📋</span>
+        <h3>Processing Log</h3>
+      </div>
+      <div class="card-body" style="padding: 0;">
+        <div id="resultsConsole" aria-live="polite">
+          <div class="entry" style="color: #93c5fd;">🚀 CR Processor ready. Upload PDF files to begin.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>CR Processor v3.3 • Hella Confirmation of Receipt Extraction Tool</p>
+      <p>Supports EP1 (1XXXXXXX) and H01 (5XXXXX) CR formats • Digital signature preservation</p>
+    </footer>
+  </div>
+
+  <!-- Load required libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script src="https://unpkg.com/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <!-- Enhanced UI Script -->
+  <script>
+    // Enhanced Upload Zone functionality
+    document.addEventListener('DOMContentLoaded', () => {
+      const uploadZone = document.getElementById('uploadZone');
+      const inputFiles = document.getElementById('inputFiles');
+      const fileListPreview = document.getElementById('fileListPreview');
+      const runBtn = document.getElementById('runBtn');
+      
+      // Initialize selected files array
+      window._selectedFiles = [];
+      
+      // Click to browse
+      uploadZone.addEventListener('click', () => inputFiles.click());
+      
+      // Drag and drop
+      uploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadZone.classList.add('dragover');
+      });
+      
+      uploadZone.addEventListener('dragleave', () => {
+        uploadZone.classList.remove('dragover');
+      });
+      
+      uploadZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadZone.classList.remove('dragover');
+        const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
+        if (files.length > 0) {
+          handleFiles(files);
+        }
+      });
+      
+      // File input change
+      inputFiles.addEventListener('change', (e) => {
+        handleFiles(Array.from(e.target.files));
+      });
+      
+      function handleFiles(files) {
+        window._selectedFiles.push(...files);
+        updateFileList();
+        uploadZone.classList.add('has-files');
+        runBtn.disabled = window._selectedFiles.length === 0;
+      }
+      
+      function updateFileList() {
+        fileListPreview.innerHTML = '';
+        
+        if (!window._selectedFiles || window._selectedFiles.length === 0) {
+          uploadZone.classList.remove('has-files');
+          runBtn.disabled = true;
+          return;
+        }
+        
+        window._selectedFiles.forEach((file, index) => {
+          const item = document.createElement('div');
+          item.className = 'file-item';
+          
+          const sizeKB = (file.size / 1024).toFixed(1);
+          const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+          const sizeDisplay = file.size > 1024 * 1024 ? `${sizeMB} MB` : `${sizeKB} KB`;
+          
+          item.innerHTML = `
+            <div class="file-icon">PDF</div>
+            <div class="file-info">
+              <div class="file-name" title="${file.name}">${file.name}</div>
+              <div class="file-size">${sizeDisplay}</div>
+            </div>
+            <button class="remove-btn" data-index="${index}" title="Remove file">×</button>
+          `;
+          
+          fileListPreview.appendChild(item);
+        });
+        
+        // Add remove handlers
+        fileListPreview.querySelectorAll('.remove-btn').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const index = parseInt(btn.dataset.index);
+            window._selectedFiles.splice(index, 1);
+            updateFileList();
+          });
+        });
+      }
+      
+      // Clear button
+      document.getElementById('clearFilesBtn').addEventListener('click', () => {
+        window._selectedFiles = [];
+        inputFiles.value = '';
+        updateFileList();
+        document.getElementById('fileList').innerHTML = '';
+        document.getElementById('manualList').innerHTML = '';
+        document.getElementById('summary').innerHTML = '';
+        document.getElementById('progressText').textContent = 'Ready';
+        document.getElementById('progressBar').querySelector('div').style.width = '0%';
+      });
+      
+      // Expose updateFileList globally for CR.js to call after processing
+      window.updateFileListUI = updateFileList;
+    });
+  </script>
+
+  <!-- Main processor -->
+  <script src="CR.js"></script>
+</body>
+</html>
