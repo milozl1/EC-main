@@ -1554,7 +1554,7 @@ function bindUI() {
     });
   }
   
-  appendLog('🚀 CR Processor v3.3 ready — Advanced Signature Detection');
+  appendLog('🚀 CR Processor v3.3 ready —  Stamp & Signature Detection');
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
