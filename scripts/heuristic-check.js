@@ -24,13 +24,18 @@ function normalizeToken(raw) {
     .replace(/[\s\-\.\,\_]+/g, '')  // Remove spaces, dashes, dots, commas
     .toUpperCase();
   
-  // OCR character corrections
-  s = s.replace(/[OQ]/g, '0')
-       .replace(/[IL|\]\[]/g, '1')
-       .replace(/[Ss\$]/g, '5')  // S and $ → 5
-       .replace(/[B]/g, '8')
-       .replace(/[G]/g, '9')
-       .replace(/[Z]/g, '2')  // Z often misread as 2
+  // OCR character corrections - order matters!
+  // Common OCR misreads for each digit:
+  s = s.replace(/[OQo]/g, '0')      // 0: O, Q, o
+       .replace(/[IL|\]\[li]/g, '1') // 1: I, L, |, l, i
+       .replace(/[Zz]/g, '2')        // 2: Z, z
+       .replace(/[Ee]/g, '3')        // 3: E can look like 3
+       .replace(/[Aa]/g, '4')        // 4: A can look like 4
+       .replace(/[Ss\$]/g, '5')      // 5: S, s, $
+       .replace(/[b]/g, '6')         // 6: b (lowercase)
+       .replace(/[Tt]/g, '7')        // 7: T can look like 7
+       .replace(/[B]/g, '8')         // 8: B (uppercase)
+       .replace(/[Gg]/g, '9')        // 9: G, g (g is common OCR error for 9)
        .replace(/[^\d]/g, '');
   
   return s;

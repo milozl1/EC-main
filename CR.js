@@ -86,6 +86,7 @@ const EXCLUSION_CONTEXT_PATTERNS = [
 window._generatedFiles = [];
 window._generatedBySource = {};
 window._manualBySource = {};
+window._pageMappingBySource = {};  // NEW: Store page-to-CR mapping for UI display
 window._hellaManifest = [];
 window._selectedFiles = [];
 
@@ -137,6 +138,7 @@ function clearState() {
   window._generatedFiles = [];
   window._generatedBySource = {};
   window._manualBySource = {};
+  window._pageMappingBySource = {};
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -208,13 +210,18 @@ function normalizeToken(raw) {
     .replace(/[\s\-\.\,\_]+/g, '')  // Remove spaces, dashes, dots, commas
     .toUpperCase();
   
-  // OCR character corrections
-  s = s.replace(/[OQ]/g, '0')
-       .replace(/[IL|\]\[]/g, '1')
-       .replace(/[Ss\$]/g, '5')  // S and $ → 5
-       .replace(/[B]/g, '8')
-       .replace(/[G]/g, '9')
-       .replace(/[Z]/g, '2')  // Z often misread as 2
+  // OCR character corrections - order matters!
+  // Common OCR misreads for each digit:
+  s = s.replace(/[OQo]/g, '0')      // 0: O, Q, o
+       .replace(/[IL|\]\[li]/g, '1') // 1: I, L, |, l, i
+       .replace(/[Zz]/g, '2')        // 2: Z, z
+       .replace(/[Ee]/g, '3')        // 3: E can look like 3
+       .replace(/[Aa]/g, '4')        // 4: A can look like 4
+       .replace(/[Ss\$]/g, '5')      // 5: S, s, $
+       .replace(/[b]/g, '6')         // 6: b (lowercase)
+       .replace(/[Tt]/g, '7')        // 7: T can look like 7
+       .replace(/[B]/g, '8')         // 8: B (uppercase)
+       .replace(/[Gg]/g, '9')        // 9: G, g (g is common OCR error for 9)
        .replace(/[^\d]/g, '');
   
   return s;
@@ -441,7 +448,10 @@ function findCRsOnText(text) {
   
   // PRIORITY 3.5: Look for "Nr." followed by H01 pattern anywhere in text
   // This catches cases like "Gelangensbestätigung Nr. |554128|" where OCR splits text
-  const nrPattern = /Nr\.?\s*[:\|\-\s]*\[?\s*(5\d{5})\s*\]?/gi;
+  // FIXED: Use permissive character class to catch OCR errors (e.g., g for 9, B for 8)
+  const digitOrOCR = '[0-9OQoILliBbGgSsZzEeAaTt\\$]';  // Digits + common OCR misreads
+  const nrPatternStr = `Nr\\.?\\s*[:\\|\\-\\s]*\\[?\\s*(5${digitOrOCR}{5})\\s*\\]?`;
+  const nrPattern = new RegExp(nrPatternStr, 'gi');
   for (const match of normalizedText.matchAll(nrPattern)) {
     const norm = normalizeToken(match[1]);
     if (isValidCR(norm)) {
@@ -450,7 +460,7 @@ function findCRsOnText(text) {
       const hasRelevantContext = /Gelangen|bestat|confirmation|receipt|innergemeinschaftlich|Lieferung/i.test(beforeContext);
       
       if (hasRelevantContext) {
-        appendLog(`CR found via Nr. pattern: ${norm}`);
+        appendLog(`CR found via Nr. pattern: ${norm} (raw: "${match[1]}")`);
         return [{
           value: norm,
           type: 'H01',
@@ -940,6 +950,74 @@ function renderGeneratedFiles() {
     
     group.appendChild(filesDiv);
     
+    // NEW: Page mapping display
+    const pageMapping = window._pageMappingBySource[source];
+    if (pageMapping && pageMapping.length > 0) {
+      const mappingDiv = document.createElement('div');
+      mappingDiv.className = 'page-mapping';
+      mappingDiv.innerHTML = `<strong>📋 Page Mapping:</strong>`;
+      
+      const table = document.createElement('table');
+      table.className = 'page-mapping-table';
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th>Page</th>
+            <th>Detected CR</th>
+            <th>Output File</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+      `;
+      
+      const tbody = document.createElement('tbody');
+      pageMapping.forEach(p => {
+        const tr = document.createElement('tr');
+        
+        // Status styling
+        let statusText = '';
+        let statusClass = '';
+        switch (p.status) {
+          case 'single':
+            statusText = '✓ OK';
+            statusClass = 'status-ok';
+            break;
+          case 'primary':
+            statusText = `📎 Merged with p.${p.mergedWith?.join(', ')}`;
+            statusClass = 'status-merged';
+            break;
+          case 'merged':
+            statusText = `↳ Attached to p.${p.mergedWith?.find(n => n < p.pageNum) || p.mergedWith?.[0]}`;
+            statusClass = 'status-attached';
+            break;
+          case 'no_cr':
+          case 'no_cr_found':
+            statusText = '⚠️ No CR found';
+            statusClass = 'status-warning';
+            break;
+          case 'detected':
+            statusText = '✓ Detected';
+            statusClass = 'status-ok';
+            break;
+          default:
+            statusText = p.status || '-';
+            statusClass = '';
+        }
+        
+        tr.innerHTML = `
+          <td><strong>p.${p.pageNum}</strong></td>
+          <td>${p.detectedCR || '<span class="no-cr">none</span>'}</td>
+          <td>${p.outputFile ? `<span class="output-file">${p.outputFile}</span>` : '<span class="no-output">-</span>'}</td>
+          <td class="${statusClass}">${statusText}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+      
+      table.appendChild(tbody);
+      mappingDiv.appendChild(table);
+      group.appendChild(mappingDiv);
+    }
+    
     const manual = window._manualBySource[source] || [];
     if (manual.length > 0) {
       const mWrap = document.createElement('div');
@@ -1018,6 +1096,15 @@ async function processFile(file, config = {}) {
   const crGroups = groupPagesByCR(pages);
   appendLog(`Found ${crGroups.length} CR group(s)`);
   
+  // Store page mapping for UI display
+  const pageMapping = pages.map(p => ({
+    pageNum: p.pageNum,
+    detectedCR: p.cr,
+    usedOCR: p.usedOCR,
+    outputFile: null,  // Will be filled after processing
+    status: p.cr ? 'detected' : 'no_cr'
+  }));
+  
   // STEP 4: Process each CR group
   const manifestEntries = [];
   
@@ -1027,6 +1114,11 @@ async function processFile(file, config = {}) {
     
     if (!group.cr) {
       appendLog(`Pages ${group.pages.map(p => p.pageNum).join(',')}: No CR found`);
+      // Update page mapping for pages without CR
+      group.pages.forEach(p => {
+        pageMapping[p.pageNum - 1].status = 'no_cr_found';
+        pageMapping[p.pageNum - 1].outputFile = null;
+      });
       continue;
     }
     
@@ -1050,6 +1142,19 @@ async function processFile(file, config = {}) {
       const blob = new Blob([bytes], { type: 'application/pdf' });
       
       saveBlobAndLink(blob, outName, file.name);
+      
+      // Update page mapping for all pages in this group
+      group.pages.forEach((p, idx) => {
+        const mapping = pageMapping[p.pageNum - 1];
+        mapping.outputFile = outName;
+        mapping.outputCR = group.cr;
+        if (group.pages.length > 1) {
+          mapping.status = idx === 0 ? 'primary' : 'merged';
+          mapping.mergedWith = group.pages.map(pg => pg.pageNum).filter(n => n !== p.pageNum);
+        } else {
+          mapping.status = 'single';
+        }
+      });
       
       if (['NEEDS_REVIEW', 'STAMP_MISSING', 'SIGNATURE_MISSING', 'BOTH_MISSING', 'DATE_MISSING'].includes(verification.overallStatus)) {
         const msg = formatVerificationMessage(file.name, group.pages.map(p => p.pageNum).join('-'), group.cr, verification);
@@ -1096,6 +1201,10 @@ async function processFile(file, config = {}) {
     });
   }
   
+  // Store page mapping for UI display
+  window._pageMappingBySource[file.name] = pageMapping;
+  renderGeneratedFiles();  // Re-render to show page mapping
+  
   const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
   appendLog(`✓ ${file.name} completed in ${elapsed}s`);
   
@@ -1103,9 +1212,10 @@ async function processFile(file, config = {}) {
 }
 
 /**
- * Group consecutive pages that share the same CR number
- * IMPROVED: Pages without CR are included in the previous group
+ * Group CONSECUTIVE pages that share the same CR number
+ * FIXED: Only merge pages if they are truly consecutive (no different CR in between)
  * Logic: If page 1 has CR=577770 and page 2 has no CR, page 2 belongs to 577770
+ * BUT: If page 3=554128, page 4=554118, page 5=554128, they should NOT merge pages 3+5
  */
 function groupPagesByCR(pages) {
   const groups = [];
@@ -1116,11 +1226,17 @@ function groupPagesByCR(pages) {
     
     if (page.cr) {
       // This page has a CR
-      if (currentGroup && currentGroup.cr === page.cr) {
-        // Same CR as current group - add to it
+      // FIXED: Only merge if this is the IMMEDIATELY previous page's CR
+      // Don't merge if there was a different CR in between
+      const isConsecutive = currentGroup && 
+                            currentGroup.cr === page.cr && 
+                            currentGroup.pages[currentGroup.pages.length - 1].pageNum === page.pageNum - 1;
+      
+      if (isConsecutive) {
+        // Same CR as current group AND consecutive - add to it
         currentGroup.pages.push(page);
       } else {
-        // Different CR - save current group and start new one
+        // Different CR OR not consecutive - save current group and start new one
         if (currentGroup && currentGroup.pages.length > 0) {
           groups.push(currentGroup);
         }
