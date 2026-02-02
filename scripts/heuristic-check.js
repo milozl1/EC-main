@@ -75,6 +75,14 @@ function normalizeOCRText(text) {
   normalized = normalized.replace(/(\d)\s+(\d)/g, '$1$2');
   normalized = normalized.replace(/(\d)\s+(\d)/g, '$1$2');
   normalized = normalized.replace(/(\d)\s+(\d)/g, '$1$2');
+  
+  // Normalize German umlauts and common OCR variations
+  // ä → a, ö → o, ü → u, ß → ss (for matching purposes)
+  normalized = normalized.replace(/[äàáâãåæ]/gi, 'a');
+  normalized = normalized.replace(/[öòóôõø]/gi, 'o');
+  normalized = normalized.replace(/[üùúû]/gi, 'u');
+  normalized = normalized.replace(/ß/g, 'ss');
+  
   return normalized;
 }
 
@@ -89,7 +97,13 @@ function findCRsOnText(text) {
   const directPatterns = [
     /No\.?\s*of\s*confirmation\s*of\s*receipt[:\s\-]*([0-9OIlSsQBG\s]{4,14})/i,
     /confirmation\s*of\s*receipt[:\s\-]*([0-9OIlSsQBG\s]{4,14})\s*from/i,
+    // German patterns - "Gelangensbestätigung Nr. 554131"
+    // Original with umlaut
     /Gelangensbestätigung(?:\s+Nr\.?)?[:\s\-]*([0-9OIlSsQBG\s]{4,14})/i,
+    // OCR-friendly variants (ä→a, ae, missing chars)
+    /Gelangensbestatigung(?:\s+Nr\.?)?[:\s\-]*([0-9OIlSsQBG\s]{4,14})/i,
+    /Gelangensbestaetigung(?:\s+Nr\.?)?[:\s\-]*([0-9OIlSsQBG\s]{4,14})/i,
+    /Gelangensbest[aä]?t?i?g?u?n?g?(?:\s+Nr\.?)?[:\s\-]*([0-9OIlSsQBG\s]{4,14})/i,
   ];
   
   // Try both original and normalized
@@ -115,6 +129,11 @@ function findCRsOnText(text) {
   const strictAnchors = [
     /No\.?\s*of\s*confirmation\s*of\s*receipt/i,
     /Gelangensbestätigung(?:\s+Nr\.?)?/i,
+    /Gelangensbestatigung(?:\s+Nr\.?)?/i,  // OCR: ä→a
+    /Gelangensbestaetigung(?:\s+Nr\.?)?/i, // OCR: ä→ae
+    /Gelangensbest[aä]?t?i?g?u?n?g?(?:\s+Nr\.?)?/i, // Partial OCR match
+    /Best[aä]tigung(?:\s+Nr\.?)?/i,  // Shorter anchor with OCR support
+    /\bNr\.?\s*(?:vom|from)?\s*$/i,  // Just "Nr." at end of context
   ];
   
   for (const anchorRx of strictAnchors) {
@@ -144,7 +163,15 @@ function findCRsOnText(text) {
   }
   
   // PRIORITY 3: Broader anchor search (100 chars)
-  for (const anchorRx of ANCHORS) {
+  const broadAnchors = [
+    /confirmation\s*of\s*receipt/i,
+    /Gelangen/i,
+    /best[aä]tigung/i,  // Just "Bestätigung" with OCR support
+    /innergemeinschaftlich/i,  // Common text in Hella CR documents
+    /Lieferung/i,  // "Delivery" in German - common in CR docs
+  ];
+  
+  for (const anchorRx of broadAnchors) {
     const anchorMatch = anchorRx.exec(normalizedText);
     if (!anchorMatch) continue;
     
@@ -170,6 +197,28 @@ function findCRsOnText(text) {
     }
   }
   
+  // PRIORITY 3.5: Look for "Nr." followed by H01 pattern anywhere in text
+  // This catches cases like "Gelangensbestätigung Nr. |554128|" where OCR splits text
+  const nrPattern = /Nr\.?\s*[:\|\-\s]*\[?\s*(5\d{5})\s*\]?/gi;
+  for (const match of normalizedText.matchAll(nrPattern)) {
+    const norm = normalizeToken(match[1]);
+    if (isValidCR(norm)) {
+      // Check context - should be near relevant document text
+      const beforeContext = normalizedText.substring(Math.max(0, match.index - 150), match.index);
+      const hasRelevantContext = /Gelangen|bestat|confirmation|receipt|innergemeinschaftlich|Lieferung/i.test(beforeContext);
+      
+      if (hasRelevantContext) {
+        return [{
+          value: norm,
+          type: 'H01',
+          raw: match[1],
+          source: 'nr_pattern',
+          confidence: 'high'
+        }];
+      }
+    }
+  }
+  
   // PRIORITY 4: Global search - H01 first, then EP1 only if anchor nearby
   // H01 global
   for (const m of normalizedText.matchAll(/\b(5\d{5})\b/g)) {
@@ -184,7 +233,7 @@ function findCRsOnText(text) {
   // EP1 global - ONLY if anchor phrase exists nearby
   for (const m of normalizedText.matchAll(/\b(1\d{7})\b/g)) {
     const nearbyContext = normalizedText.substring(Math.max(0, m.index - 200), m.index);
-    const hasAnchorNearby = /confirmation|receipt|Gelangen|bestätigung/i.test(nearbyContext);
+    const hasAnchorNearby = /confirmation|receipt|Gelangen|bestatigung|bestaetigung|innergemeinschaftlich|Lieferung|Nr\./i.test(nearbyContext);
     
     if (hasAnchorNearby) {
       const norm = normalizeToken(m[0]);
@@ -348,6 +397,50 @@ Deutschland
 DE813832619
 Gelangensbestätigung Nr. 554131 vom 30.04.2025`,
     expected: { value: '554131', type: 'H01' }
+  },
+  
+  // OCR edge cases - German umlauts and character errors
+  {
+    name: 'OCR - Gelangensbestatigung without umlaut',
+    input: 'Gelangensbestatigung Nr. 554128 vom 30.04.2025',
+    expected: { value: '554128', type: 'H01' }
+  },
+  {
+    name: 'OCR - Gelangensbestaetigung with ae',
+    input: 'Gelangensbestaetigung Nr. 554118 vom 30.04.2025',
+    expected: { value: '554118', type: 'H01' }
+  },
+  {
+    name: 'OCR - Partial anchor Gelangensbest',
+    input: 'Gelangensbest Nr. 554128 vom 30.04.2025',
+    expected: { value: '554128', type: 'H01' }
+  },
+  {
+    name: 'OCR - Bestätigung only anchor',
+    input: 'Bestätigung Nr. 554131 vom 30.04.2025\nCustomer: Hella GmbH',
+    expected: { value: '554131', type: 'H01' }
+  },
+  {
+    name: 'OCR - innergemeinschaftlich context with Nr pattern',
+    input: `Bestätigung über das Gelangen der Gegenstände
+innergemeinschaftlicher Lieferungen
+in einen anderen EU-Mitgliedsstaat
+Nr. 554128 vom 30.04.2025`,
+    expected: { value: '554128', type: 'H01' }
+  },
+  {
+    name: 'OCR - Boxed CR number with pipes',
+    input: 'Gelangensbestätigung Nr. |554128| vom 30.04.2025',
+    expected: { value: '554128', type: 'H01' }
+  },
+  {
+    name: 'OCR - Full Hella doc with varied OCR quality',
+    input: `Bestatigung uber das Gelangen der Gegenstande
+innergemeinschaftlicher Lieferungen
+in einen anderen EU-Mitgliedsstaat (Gelangensbestatigung)
+Customer: Hella Fahrzeugteile Austria GmbH
+Gelangensbestatigung Nr. 554128 vom 30.04.2025`,
+    expected: { value: '554128', type: 'H01' }
   }
 ];
 

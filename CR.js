@@ -270,6 +270,13 @@ function normalizeOCRText(text) {
   normalized = normalized.replace(/(\d)\s+(\d)/g, '$1$2'); // Run twice for consecutive
   normalized = normalized.replace(/(\d)\s+(\d)/g, '$1$2'); // Run thrice to be safe
   
+  // Normalize German umlauts and common OCR variations
+  // ä → a, ö → o, ü → u, ß → ss (for matching purposes)
+  normalized = normalized.replace(/[äàáâãåæ]/gi, 'a');
+  normalized = normalized.replace(/[öòóôõø]/gi, 'o');
+  normalized = normalized.replace(/[üùúû]/gi, 'u');
+  normalized = normalized.replace(/ß/g, 'ss');
+  
   return normalized;
 }
 
@@ -291,7 +298,12 @@ function findCRsOnText(text) {
     /No\.?\s*of\s*confirmation\s*of\s*receipt[:\s\-]*([0-9OIlSsQBG\s]{4,14})/i,
     /confirmation\s*of\s*receipt[:\s\-]*([0-9OIlSsQBG\s]{4,14})\s*from/i,
     // German patterns - "Gelangensbestätigung Nr. 554131"
+    // Original with umlaut
     /Gelangensbestätigung(?:\s+Nr\.?)?[:\s\-]*([0-9OIlSsQBG\s]{4,14})/i,
+    // OCR-friendly variants (ä→a, ae, missing chars)
+    /Gelangensbestatigung(?:\s+Nr\.?)?[:\s\-]*([0-9OIlSsQBG\s]{4,14})/i,
+    /Gelangensbestaetigung(?:\s+Nr\.?)?[:\s\-]*([0-9OIlSsQBG\s]{4,14})/i,
+    /Gelangensbest[aä]?t?i?g?u?n?g?(?:\s+Nr\.?)?[:\s\-]*([0-9OIlSsQBG\s]{4,14})/i,
   ];
   
   // Try both original and normalized text
@@ -321,7 +333,11 @@ function findCRsOnText(text) {
   const strictAnchors = [
     /No\.?\s*of\s*confirmation\s*of\s*receipt/i,
     /Gelangensbestätigung(?:\s+Nr\.?)?/i,
-    /Bestätigung(?:\s+Nr\.?)?/i,
+    /Gelangensbestatigung(?:\s+Nr\.?)?/i,  // OCR: ä→a
+    /Gelangensbestaetigung(?:\s+Nr\.?)?/i, // OCR: ä→ae
+    /Gelangensbest[aä]?t?i?g?u?n?g?(?:\s+Nr\.?)?/i, // Partial OCR match
+    /Best[aä]tigung(?:\s+Nr\.?)?/i,  // Shorter anchor with OCR support
+    /\bNr\.?\s*(?:vom|from)?\s*$/i,  // Just "Nr." at end of context
   ];
   
   for (const anchorRx of strictAnchors) {
@@ -371,6 +387,9 @@ function findCRsOnText(text) {
   const broadAnchors = [
     /confirmation\s*of\s*receipt/i,
     /Gelangen/i,
+    /best[aä]tigung/i,  // Just "Bestätigung" with OCR support
+    /innergemeinschaftlich/i,  // Common text in Hella CR documents
+    /Lieferung/i,  // "Delivery" in German - common in CR docs
   ];
   
   for (const anchorRx of broadAnchors) {
@@ -420,6 +439,30 @@ function findCRsOnText(text) {
     }
   }
   
+  // PRIORITY 3.5: Look for "Nr." followed by H01 pattern anywhere in text
+  // This catches cases like "Gelangensbestätigung Nr. |554128|" where OCR splits text
+  const nrPattern = /Nr\.?\s*[:\|\-\s]*\[?\s*(5\d{5})\s*\]?/gi;
+  for (const match of normalizedText.matchAll(nrPattern)) {
+    const norm = normalizeToken(match[1]);
+    if (isValidCR(norm)) {
+      // Check context - should be near relevant document text
+      const beforeContext = normalizedText.substring(Math.max(0, match.index - 150), match.index);
+      const hasRelevantContext = /Gelangen|bestat|confirmation|receipt|innergemeinschaftlich|Lieferung/i.test(beforeContext);
+      
+      if (hasRelevantContext) {
+        appendLog(`CR found via Nr. pattern: ${norm}`);
+        return [{
+          value: norm,
+          type: 'H01',
+          raw: match[1],
+          index: match.index,
+          source: 'nr_pattern',
+          confidence: 'high'
+        }];
+      }
+    }
+  }
+  
   // PRIORITY 4: Global search - ONLY if no anchor-based result found
   // This is last resort and may pick up wrong numbers
   appendLog('No anchor-based CR found, trying global search...', 'warn');
@@ -436,7 +479,7 @@ function findCRsOnText(text) {
     
     // Check if there's an anchor phrase nearby (within 200 chars before)
     const nearbyContext = normalizedText.substring(Math.max(0, m.index - 200), m.index);
-    const hasAnchorNearby = /confirmation|receipt|Gelangen|bestätigung/i.test(nearbyContext);
+    const hasAnchorNearby = /confirmation|receipt|Gelangen|bestatigung|bestaetigung|innergemeinschaftlich|Lieferung|Nr\./i.test(nearbyContext);
     
     if (isValidCR(norm) && !isInExclusionContext(normalizedText, m.index, m[1]) && !looksLikePostalCode) {
       globalCandidates.push({
@@ -465,7 +508,7 @@ function findCRsOnText(text) {
       
       // Check if there's an anchor phrase nearby
       const nearbyContext = normalizedText.substring(Math.max(0, m.index - 200), m.index);
-      const hasAnchorNearby = /confirmation|receipt|Gelangen|bestätigung/i.test(nearbyContext);
+      const hasAnchorNearby = /confirmation|receipt|Gelangen|bestatigung|bestaetigung|innergemeinschaftlich|Lieferung|Nr\./i.test(nearbyContext);
       
       // STRICTER: Only accept EP1 from global search if it has anchor nearby
       // This prevents picking up material numbers like 13047454
