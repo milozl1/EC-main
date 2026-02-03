@@ -10,9 +10,9 @@
 
   // === Configuration ===
   const CONFIG = {
-    maxFiles: 100,                    // Maximum number of files allowed
-    maxFileSizeMB: 50,                // Maximum size per file in MB
-    maxTotalSizeMB: 500,              // Maximum total size in MB
+    maxFiles: 500,                    // Maximum number of files allowed
+    maxFileSizeMB: 200,               // Maximum size per file in MB
+    maxTotalSizeMB: 10000,            // Maximum total size in MB
     allowedExtensions: ['.pdf'],      // Allowed file extensions (empty = allow all)
     strictExtensionCheck: false,      // If true, reject non-matching extensions
     dateFormat: 'yymmdd'            // Date format used in renamed files
