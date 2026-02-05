@@ -37,7 +37,7 @@
             <a href="menu.html" class="back-btn" aria-label="Back to Menu">← Back to Menu</a>
             <h1>📄 Delivery Note Extractor</h1>
             <p class="subtitle">Upload PDF files to extract Delivery Notes and generate Excel files</p>
-            <p class="version-badge">v7.2 Improved Auto-Fix</p>
+            <p class="version-badge">v7.3 Enhanced Auto-Fix</p>
         </header>
 
         <!-- Library Loading Status -->
@@ -122,9 +122,9 @@
                 <h4>📋 Validation Rules</h4>
                 <ul>
                     <li><span class="rule-badge accepted">✅ Accepted</span> Exactly 8 digits → Exported to Excel</li>
-                    <li><span class="rule-badge excluded">⏭️ Excluded</span> 9-10 digits → Too long, skipped</li>
+                    <li><span class="rule-badge excluded">⏭️ Excluded</span> 9-10 digits (non-zero start) → Too long, skipped</li>
                     <li><span class="rule-badge invalid">❌ Invalid</span> &lt;7 digits, &gt;10 digits, letters, or special characters</li>
-                    <li><span class="rule-badge corrected">🔧 Auto-Fix</span> 7 digits → Add leading digit based on pattern</li>
+                    <li><span class="rule-badge corrected">🔧 Auto-Fix</span> 7 digits → Add leading digit | Leading zeros → Remove (00XXXXXXXX → XXXXXXXX)</li>
                 </ul>
             </div>
         </section>
@@ -186,7 +186,7 @@
 
         <!-- Footer -->
         <footer class="footer">
-            <p>Delivery Note Extractor v7.2 </p>
+            <p>Delivery Note Extractor v7.3 </p>
             <p class="footer-hint">Created by Zlatan Milosevic, Jan 2026, Forvia Hella</p>
         </footer>
     </div>

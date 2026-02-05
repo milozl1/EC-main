@@ -436,6 +436,22 @@ body {
     color: #721c24;
 }
 
+.status-empty {
+    background-color: #fff3cd;
+    color: #856404;
+    cursor: help;
+}
+
+.no-download {
+    display: inline-block;
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    color: #6c757d;
+    background-color: #e9ecef;
+    border-radius: 4px;
+    cursor: help;
+}
+
 @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.6; }

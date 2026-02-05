@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * DELIVERY NOTE EXTRACTOR - APPLICATION v7.2 (Improved Auto-Fix)
+ * DELIVERY NOTE EXTRACTOR - APPLICATION v7.3 (Enhanced Auto-Fix)
  * ============================================================================
  * 
  * APPROACH: Extract ALL 8-digit numbers from PDF, then validate
@@ -8,12 +8,14 @@
  * 
  * RULES:
  * - 8 digits: ACCEPTED (exported to Excel)
- * - 9-10 digits: EXCLUDED (too long, likely Transport ID)
+ * - 9-10 digits starting with 0(s): AUTO-CORRECT by removing leading zeros if result is 8 digits
+ * - 9-10 digits not starting with 0: EXCLUDED (too long, likely Transport ID)
  * - 7 digits: AUTO-CORRECT if pattern found AND first digit differs, else INVALID
  * - Other: INVALID
+ * - Empty result: NO Excel generated, user is notified with reason
  * 
- * v7.2 UPDATE: If a 7-digit number already starts with the dominant digit,
- *              it means the LAST digit is missing (not first) → mark INVALID
+ * v7.3 UPDATE: Added leading zeros auto-fix (00XXXXXXXX → XXXXXXXX)
+ *              Empty files no longer generate Excel, user gets clear feedback
  * ============================================================================
  */
 
@@ -180,15 +182,9 @@ function extractPotentialDeliveryNotes(textItems) {
         // Skip if empty
         if (!cleaned) continue;
         
-        // Check if it's a pure digit string of 7-10 characters
-        if (/^\d{7,10}$/.test(cleaned)) {
-            // Additional check: skip if it looks like something else
-            // Skip values starting with 0 and having 10 digits (often Transport IDs)
-            if (cleaned.length === 10 && cleaned.startsWith('0')) {
-                console.log(`  ⏭️ Skipping Transport ID pattern: ${cleaned}`);
-                continue;
-            }
-            
+        // Check if it's a pure digit string of 7-12 characters
+        // Extended range to capture potential leading zeros (00XXXXXXXX patterns)
+        if (/^\d{7,12}$/.test(cleaned)) {
             // Track all occurrences
             allCandidates.push(cleaned);
             occurrenceCount[cleaned] = (occurrenceCount[cleaned] || 0) + 1;
@@ -239,7 +235,7 @@ function validateDeliveryNotes(extractionResult) {
         accepted: [],           // Valid 8-digit delivery notes
         excluded: [],           // 9-10 digits (too long)
         invalid: [],            // Other issues
-        autoCorrections: [],    // 7-digit auto-corrected
+        autoCorrections: [],    // 7-digit or leading-zero auto-corrected
         duplicates: [],         // All duplicates info
         uniqueCount: 0,
         duplicateCount: 0,
@@ -265,16 +261,119 @@ function validateDeliveryNotes(extractionResult) {
         const len = cleaned.length;
         
         if (len === 8) {
-            // Perfect! This is what we want
-            seen.add(cleaned);
-            tempAccepted.push(cleaned);
-            console.log(`  ✅ Accepted: ${cleaned}`);
+            // Check if it starts with leading zeros that make it invalid (like 00XXXXXX - only 6 real digits)
+            const stripped = cleaned.replace(/^0+/, '');
+            if (stripped.length < 8 && stripped.length > 0) {
+                // This is a number with leading zeros - the actual number is less than 8 digits
+                // Still accept it as-is since it's 8 characters total
+                seen.add(cleaned);
+                tempAccepted.push(cleaned);
+                console.log(`  ✅ Accepted: ${cleaned}`);
+            } else {
+                // Perfect! This is what we want
+                seen.add(cleaned);
+                tempAccepted.push(cleaned);
+                console.log(`  ✅ Accepted: ${cleaned}`);
+            }
+        } else if (len === 9 && cleaned.startsWith('0')) {
+            // 9 digits starting with 0: try stripping leading zeros to get 8 digits
+            const stripped = cleaned.replace(/^0+/, '');
+            if (stripped.length === 8) {
+                // Auto-correct by removing leading zero
+                if (!seen.has(stripped)) {
+                    seen.add(stripped);
+                    results.autoCorrections.push({
+                        original: cleaned,
+                        corrected: stripped,
+                        confidence: 'high',
+                        reason: `Removed leading zero`
+                    });
+                    results.accepted.push(stripped);
+                    console.log(`  ✅ Auto-corrected (leading zero): ${cleaned} → ${stripped}`);
+                } else {
+                    // Already exists as duplicate
+                    const existingCount = occurrenceCount[stripped] || 1;
+                    results.duplicates.push({
+                        value: stripped,
+                        count: existingCount + 1,
+                        reason: `Corrected from ${cleaned}, already exists`
+                    });
+                    results.duplicateCount++;
+                    console.log(`  🔁 Corrected ${cleaned} → ${stripped} is duplicate`);
+                }
+            } else {
+                // Can't auto-correct - exclude as 9 digits
+                results.excluded.push({ value: cleaned, reason: `9 digits (excluded - likely Transport ID)` });
+                console.log(`  ⏭️ Excluded: ${cleaned} (9 digits)`);
+            }
+        } else if (len === 10 && cleaned.startsWith('0')) {
+            // 10 digits starting with 0: try stripping leading zeros to get 8 digits
+            const stripped = cleaned.replace(/^0+/, '');
+            if (stripped.length === 8) {
+                // Auto-correct by removing leading zeros
+                if (!seen.has(stripped)) {
+                    seen.add(stripped);
+                    results.autoCorrections.push({
+                        original: cleaned,
+                        corrected: stripped,
+                        confidence: 'high',
+                        reason: `Removed ${len - 8} leading zero(s)`
+                    });
+                    results.accepted.push(stripped);
+                    console.log(`  ✅ Auto-corrected (leading zeros): ${cleaned} → ${stripped}`);
+                } else {
+                    // Already exists as duplicate
+                    const existingCount = occurrenceCount[stripped] || 1;
+                    results.duplicates.push({
+                        value: stripped,
+                        count: existingCount + 1,
+                        reason: `Corrected from ${cleaned}, already exists`
+                    });
+                    results.duplicateCount++;
+                    console.log(`  🔁 Corrected ${cleaned} → ${stripped} is duplicate`);
+                }
+            } else {
+                // Can't auto-correct - exclude as 10 digits
+                results.excluded.push({ value: cleaned, reason: `10 digits (excluded - likely Transport ID)` });
+                console.log(`  ⏭️ Excluded: ${cleaned} (10 digits)`);
+            }
+        } else if (len > 10 && cleaned.startsWith('0')) {
+            // More than 10 digits starting with 0: try stripping leading zeros
+            const stripped = cleaned.replace(/^0+/, '');
+            if (stripped.length === 8) {
+                // Auto-correct by removing leading zeros
+                if (!seen.has(stripped)) {
+                    seen.add(stripped);
+                    results.autoCorrections.push({
+                        original: cleaned,
+                        corrected: stripped,
+                        confidence: 'high',
+                        reason: `Removed ${len - 8} leading zero(s)`
+                    });
+                    results.accepted.push(stripped);
+                    console.log(`  ✅ Auto-corrected (leading zeros): ${cleaned} → ${stripped}`);
+                } else {
+                    results.duplicates.push({
+                        value: stripped,
+                        count: 2,
+                        reason: `Corrected from ${cleaned}, already exists`
+                    });
+                    results.duplicateCount++;
+                }
+            } else {
+                // Invalid
+                results.invalid.push({ 
+                    value: cleaned, 
+                    reason: `${len} digits (expected 8)` 
+                });
+                console.log(`  ❌ Invalid: ${cleaned} (${len} digits)`);
+            }
         } else if (len === 9 || len === 10) {
-            // Too long - exclude
+            // 9-10 digits not starting with 0 - exclude
             results.excluded.push({ value: cleaned, reason: `${len} digits (excluded - likely Transport ID)` });
             console.log(`  ⏭️ Excluded: ${cleaned} (${len} digits)`);
         } else if (len === 7) {
-            // May need auto-correction
+            // May need auto-correction (add leading digit)
             pending7Digit.push(cleaned);
             console.log(`  🔧 Pending 7-digit: ${cleaned}`);
         } else {
@@ -297,11 +396,17 @@ function validateDeliveryNotes(extractionResult) {
             const fd = note[0];
             firstDigitCounts[fd] = (firstDigitCounts[fd] || 0) + 1;
         }
+        // Also consider auto-corrected notes for pattern detection
+        for (const correction of results.autoCorrections) {
+            const fd = correction.corrected[0];
+            firstDigitCounts[fd] = (firstDigitCounts[fd] || 0) + 1;
+        }
         
         // Find most common first digit (must have at least 30% or 1 occurrence)
         let dominantDigit = null;
         let maxCount = 0;
-        const threshold = Math.max(1, tempAccepted.length * 0.3);
+        const totalAccepted = tempAccepted.length + results.autoCorrections.length;
+        const threshold = Math.max(1, totalAccepted * 0.3);
         
         for (const [digit, count] of Object.entries(firstDigitCounts)) {
             if (count > maxCount && count >= threshold) {
@@ -641,10 +746,11 @@ function updateFileList() {
     fileCount.textContent = AppState.files.size;
     
     const hasPending = Array.from(AppState.files.values()).some(f => f.status === 'pending');
-    const hasDone = Array.from(AppState.files.values()).some(f => f.status === 'done');
+    // Only enable download if there are files with actual Excel data (not empty)
+    const hasDownloadable = AppState.excelBlobs.size > 0;
     
     processAllBtn.disabled = !hasPending || AppState.isProcessing;
-    downloadAllBtn.disabled = !hasDone || AppState.isProcessing;
+    downloadAllBtn.disabled = !hasDownloadable || AppState.isProcessing;
     
     let files = Array.from(AppState.files.entries());
     
@@ -679,19 +785,35 @@ function createFileRow(fileId, fileData) {
         return `<button class="cell-link" onclick="showCellDetails('${fileId}','${type}','${Utils.escapeHtml(title)}')">${count}</button>`;
     };
     
-    const statusBadge = {
-        pending: '<span class="status-badge status-pending">⏳ Pending</span>',
-        processing: '<span class="status-badge status-processing">⚙️ Processing</span>',
-        done: '<span class="status-badge status-done">✅ Done</span>',
-        error: `<span class="status-badge status-error">❌ Error</span>`
-    }[fileData.status] || '';
+    // Check if file is done but has no accepted delivery notes (empty result)
+    const hasExcel = AppState.excelBlobs.has(fileId);
+    const isEmpty = fileData.status === 'done' && !hasExcel;
     
-    const actionBtn = {
-        done: `<button class="btn btn-success btn-small" onclick="downloadExcel('${fileId}')">📥 Download</button>`,
-        pending: `<button class="btn btn-primary btn-small" onclick="processFile('${fileId}')">⚙️ Process</button>`,
-        error: `<button class="btn btn-secondary btn-small" onclick="processFile('${fileId}')">🔄 Retry</button>`,
-        processing: '<span class="loading-indicator"><span class="spinner"></span></span>'
-    }[fileData.status] || '-';
+    let statusBadge;
+    if (isEmpty) {
+        const reason = fileData.emptyReason || 'No delivery notes found';
+        statusBadge = `<span class="status-badge status-empty" title="${Utils.escapeHtml(reason)}">⚠️ Empty</span>`;
+    } else {
+        statusBadge = {
+            pending: '<span class="status-badge status-pending">⏳ Pending</span>',
+            processing: '<span class="status-badge status-processing">⚙️ Processing</span>',
+            done: '<span class="status-badge status-done">✅ Done</span>',
+            error: `<span class="status-badge status-error">❌ Error</span>`
+        }[fileData.status] || '';
+    }
+    
+    let actionBtn;
+    if (isEmpty) {
+        const reason = fileData.emptyReason || 'No delivery notes found';
+        actionBtn = `<span class="no-download" title="${Utils.escapeHtml(reason)}">No data</span>`;
+    } else {
+        actionBtn = {
+            done: `<button class="btn btn-success btn-small" onclick="downloadExcel('${fileId}')">📥 Download</button>`,
+            pending: `<button class="btn btn-primary btn-small" onclick="processFile('${fileId}')">⚙️ Process</button>`,
+            error: `<button class="btn btn-secondary btn-small" onclick="processFile('${fileId}')">🔄 Retry</button>`,
+            processing: '<span class="loading-indicator"><span class="spinner"></span></span>'
+        }[fileData.status] || '-';
+    }
     
     const fileName = fileData.name.length > 25 ? fileData.name.slice(0, 22) + '...' : fileData.name;
     
@@ -912,8 +1034,24 @@ async function processFile(fileId) {
         fileData.status = 'done';
         fileData.results = results;
         
-        const excelBlob = generateExcel([...new Set(results.accepted)]);
-        AppState.excelBlobs.set(fileId, excelBlob);
+        // Only generate Excel if there are accepted delivery notes
+        const acceptedNotes = [...new Set(results.accepted)];
+        if (acceptedNotes.length > 0) {
+            const excelBlob = generateExcel(acceptedNotes);
+            AppState.excelBlobs.set(fileId, excelBlob);
+        } else {
+            // No delivery notes found - determine reason for user notification
+            let reason = 'No valid 8-digit delivery notes found';
+            if (results.excluded.length > 0) {
+                reason = `No valid delivery notes: ${results.excluded.length} excluded (9-10 digits)`;
+            } else if (results.invalid.length > 0) {
+                reason = `No valid delivery notes: ${results.invalid.length} invalid entries found`;
+            } else {
+                reason = 'No delivery notes found in document';
+            }
+            fileData.emptyReason = reason;
+            console.warn(`⚠️ ${fileData.name}: ${reason}`);
+        }
         
     } catch (error) {
         fileData.status = 'error';
@@ -946,16 +1084,35 @@ async function processAllFiles() {
     
     AppState.isProcessing = false;
     updateFileList();
-    showNotification(`Processed ${processed} file(s)!`, 'success');
+    
+    // Count empty files and successful files
+    const emptyFiles = Array.from(AppState.files.values())
+        .filter(f => f.status === 'done' && !AppState.excelBlobs.has(f.id));
+    const successFiles = AppState.excelBlobs.size;
+    
+    if (emptyFiles.length > 0 && successFiles > 0) {
+        showNotification(`Processed ${processed} file(s): ${successFiles} with data, ${emptyFiles.length} empty`, 'warning');
+    } else if (emptyFiles.length > 0 && successFiles === 0) {
+        showNotification(`Processed ${processed} file(s): No delivery notes found in any file`, 'warning');
+    } else {
+        showNotification(`Processed ${processed} file(s) successfully!`, 'success');
+    }
 }
 
 function downloadExcel(fileId) {
     const blob = AppState.excelBlobs.get(fileId);
     const fileData = AppState.files.get(fileId);
     
-    if (blob && fileData) {
-        saveAs(blob, Utils.getFileNameWithoutExtension(fileData.name) + '.xlsx');
+    if (!fileData) return;
+    
+    if (!blob) {
+        // No Excel available - show reason to user
+        const reason = fileData.emptyReason || 'No valid delivery notes found in document';
+        showNotification(reason, 'warning');
+        return;
     }
+    
+    saveAs(blob, Utils.getFileNameWithoutExtension(fileData.name) + '.xlsx');
 }
 
 async function downloadAllAsZip() {
@@ -1022,12 +1179,15 @@ function showGlobalDetails(type) {
 function exportSummaryReport() {
     let report = `DELIVERY NOTE EXTRACTOR - SUMMARY REPORT\n`;
     report += `Generated: ${new Date().toLocaleString()}\n`;
-    report += `App Version: 7.0 (Robust Extraction)\n\n`;
+    report += `App Version: 7.3 (Enhanced Auto-Fix)\n\n`;
     report += `${'='.repeat(50)}\nSTATISTICS\n${'='.repeat(50)}\n`;
     
-    let totals = { accepted: 0, excluded: 0, invalid: 0, duplicates: 0, corrections: 0 };
+    let totals = { accepted: 0, excluded: 0, invalid: 0, duplicates: 0, corrections: 0, empty: 0 };
     
-    for (const [_, f] of AppState.files) {
+    for (const [fileId, f] of AppState.files) {
+        if (f.status === 'done' && !AppState.excelBlobs.has(fileId)) {
+            totals.empty++;
+        }
         if (f.results) {
             totals.accepted += f.results.accepted?.length || 0;
             totals.excluded += f.results.excluded?.length || 0;
@@ -1038,6 +1198,8 @@ function exportSummaryReport() {
     }
     
     report += `Total Files: ${AppState.files.size}\n`;
+    report += `Files with Data: ${AppState.files.size - totals.empty}\n`;
+    report += `Empty Files (no delivery notes): ${totals.empty}\n`;
     report += `Accepted (8 digits): ${totals.accepted}\n`;
     report += `Excluded (9-10 digits): ${totals.excluded}\n`;
     report += `Invalid: ${totals.invalid}\n`;
@@ -1178,7 +1340,7 @@ function init() {
     }, 1000);
     
     initEventListeners();
-    console.log('🚀 Delivery Note Extractor v7.2 (Improved Auto-Fix) initialized');
+    console.log('🚀 Delivery Note Extractor v7.3 (Enhanced Auto-Fix) initialized');
 }
 
 if (document.readyState === 'loading') {
@@ -1239,9 +1401,34 @@ window.runTests = function() {
         }
     }
     
+    // Helper to wrap array into extraction result format
+    function makeExtractionResult(notes) {
+        const occurrenceCount = {};
+        for (const note of notes) {
+            occurrenceCount[note] = (occurrenceCount[note] || 0) + 1;
+        }
+        const unique = [...new Set(notes)];
+        const duplicates = [];
+        for (const value of unique) {
+            if (occurrenceCount[value] > 1) {
+                duplicates.push({
+                    value: value,
+                    count: occurrenceCount[value],
+                    reason: `Found ${occurrenceCount[value]} times`
+                });
+            }
+        }
+        return {
+            unique: unique,
+            duplicates: duplicates,
+            totalCount: notes.length,
+            occurrenceCount: occurrenceCount
+        };
+    }
+    
     // Test 1: 8-digit validation
     test('8-digit number should be ACCEPTED', () => {
-        const result = validateDeliveryNotes(['26996798']);
+        const result = validateDeliveryNotes(makeExtractionResult(['26996798']));
         assertEqual(result.accepted.length, 1, 'Accepted count');
         assertEqual(result.accepted[0], '26996798', 'Accepted value');
         assertEqual(result.excluded.length, 0, 'Excluded count');
@@ -1250,21 +1437,21 @@ window.runTests = function() {
     
     // Test 2: Multiple 8-digit numbers
     test('Multiple 8-digit numbers should all be ACCEPTED', () => {
-        const result = validateDeliveryNotes(['26996798', '27008029', '27005099', '27010223']);
+        const result = validateDeliveryNotes(makeExtractionResult(['26996798', '27008029', '27005099', '27010223']));
         assertEqual(result.accepted.length, 4, 'Accepted count');
         assertEqual(result.excluded.length, 0, 'Excluded count');
     });
     
     // Test 3: 9-digit number should be EXCLUDED
     test('9-digit number should be EXCLUDED', () => {
-        const result = validateDeliveryNotes(['123456789']);
+        const result = validateDeliveryNotes(makeExtractionResult(['123456789']));
         assertEqual(result.accepted.length, 0, 'Accepted count');
         assertEqual(result.excluded.length, 1, 'Excluded count');
     });
     
     // Test 4: 10-digit number should be EXCLUDED
     test('10-digit number should be EXCLUDED', () => {
-        const result = validateDeliveryNotes(['1234567890']);
+        const result = validateDeliveryNotes(makeExtractionResult(['1234567890']));
         assertEqual(result.accepted.length, 0, 'Accepted count');
         assertEqual(result.excluded.length, 1, 'Excluded count');
     });
@@ -1272,7 +1459,7 @@ window.runTests = function() {
     // Test 5: 7-digit with pattern should be AUTO-CORRECTED
     test('7-digit with 8-digit pattern should be AUTO-CORRECTED', () => {
         // First pass: 8-digit notes establish pattern (start with 2)
-        const result = validateDeliveryNotes(['26996798', '27008029', '7180890']);
+        const result = validateDeliveryNotes(makeExtractionResult(['26996798', '27008029', '7180890']));
         // 7180890 should be corrected to 27180890
         assertEqual(result.autoCorrections.length, 1, 'Auto-corrections count');
         assertEqual(result.autoCorrections[0].original, '7180890', 'Original value');
@@ -1281,28 +1468,28 @@ window.runTests = function() {
     
     // Test 6: 7-digit without pattern should be INVALID
     test('7-digit without pattern should be INVALID (needs review)', () => {
-        const result = validateDeliveryNotes(['7180890']); // No 8-digit notes to establish pattern
+        const result = validateDeliveryNotes(makeExtractionResult(['7180890'])); // No 8-digit notes to establish pattern
         assertEqual(result.invalid.length, 1, 'Invalid count');
         assertEqual(result.autoCorrections.length, 0, 'Auto-corrections count');
     });
     
     // Test 7: Duplicates should be detected
     test('Duplicate 8-digit numbers should be detected', () => {
-        const result = validateDeliveryNotes(['26996798', '26996798', '27008029']);
+        const result = validateDeliveryNotes(makeExtractionResult(['26996798', '26996798', '27008029']));
         assertEqual(result.accepted.length, 2, 'Accepted count (unique)');
         assertEqual(result.duplicateCount, 1, 'Duplicate count');
     });
     
     // Test 8: Mixed input
     test('Mixed input should be classified correctly', () => {
-        const result = validateDeliveryNotes([
+        const result = validateDeliveryNotes(makeExtractionResult([
             '26996798',  // 8 digits - accept
             '27008029',  // 8 digits - accept
             '123456789', // 9 digits - exclude
             '1234567890',// 10 digits - exclude
             '7180890',   // 7 digits - auto-correct (pattern from above)
             '12345'      // 5 digits - invalid
-        ]);
+        ]));
         assertEqual(result.accepted.length, 3, 'Accepted count (2 + 1 corrected)');
         assertEqual(result.excluded.length, 2, 'Excluded count');
         assertEqual(result.invalid.length, 1, 'Invalid count');
@@ -1310,7 +1497,7 @@ window.runTests = function() {
     });
     
     // Test 9: extractPotentialDeliveryNotes filters correctly
-    test('extractPotentialDeliveryNotes should only return 7-10 digit pure numbers', () => {
+    test('extractPotentialDeliveryNotes should only return 7-12 digit pure numbers', () => {
         const items = [
             { text: '26996798', pageNum: 1 },      // Valid 8-digit
             { text: '21/02/2025', pageNum: 1 },    // Date - should be ignored
@@ -1320,9 +1507,9 @@ window.runTests = function() {
             { text: '7180890', pageNum: 1 },       // Valid 7-digit
         ];
         const result = extractPotentialDeliveryNotes(items);
-        assertEqual(result.length, 2, 'Should only extract 2 valid candidates');
-        assertEqual(result.includes('26996798'), true, 'Should include 8-digit');
-        assertEqual(result.includes('7180890'), true, 'Should include 7-digit');
+        assertEqual(result.unique.length, 2, 'Should only extract 2 valid candidates');
+        assertEqual(result.unique.includes('26996798'), true, 'Should include 8-digit');
+        assertEqual(result.unique.includes('7180890'), true, 'Should include 7-digit');
     });
     
     // Test 10: Real PDF values from screenshots
@@ -1332,7 +1519,7 @@ window.runTests = function() {
             '27018035', '27016500', '27023343', '27031367',
             '27028952', '27028838', '27043970'
         ];
-        const result = validateDeliveryNotes(realValues);
+        const result = validateDeliveryNotes(makeExtractionResult(realValues));
         assertEqual(result.accepted.length, 11, 'All 11 real values should be accepted');
         assertEqual(result.excluded.length, 0, 'None should be excluded');
         assertEqual(result.invalid.length, 0, 'None should be invalid');
@@ -1346,7 +1533,7 @@ window.runTests = function() {
         // 8-digit notes establish dominant first digit = '2'
         // '2715703' has 7 digits and ALREADY starts with '2'
         // → cannot prepend '2' (would mean missing last digit) → INVALID
-        const result = validateDeliveryNotes(['26996798', '27008029', '27005099', '2715703']);
+        const result = validateDeliveryNotes(makeExtractionResult(['26996798', '27008029', '27005099', '2715703']));
         
         // Should have 3 accepted (the 8-digit ones)
         assertEqual(result.accepted.length, 3, 'Accepted count (only 8-digit)');
@@ -1364,13 +1551,80 @@ window.runTests = function() {
     test('7-digit NOT starting with dominant digit should be AUTO-CORRECTED', () => {
         // Dominant digit = '2', pending = '7180890' (starts with '7', not '2')
         // → CAN prepend '2' → '27180890'
-        const result = validateDeliveryNotes(['26996798', '27008029', '7180890']);
+        const result = validateDeliveryNotes(makeExtractionResult(['26996798', '27008029', '7180890']));
         
         assertEqual(result.autoCorrections.length, 1, 'Auto-corrections count');
         assertEqual(result.autoCorrections[0].original, '7180890', 'Original');
         assertEqual(result.autoCorrections[0].corrected, '27180890', 'Corrected');
         assertEqual(result.accepted.length, 3, 'Accepted count (2 original + 1 corrected)');
         assertEqual(result.invalid.length, 0, 'Invalid count should be 0');
+    });
+    
+    // ==========================================================================
+    // NEW TESTS (v7.3): Leading zeros auto-fix
+    // ==========================================================================
+    
+    test('10-digit with leading zeros (00XXXXXXXX) should be auto-corrected to 8 digits (v7.3)', () => {
+        // '0080652245' has 10 digits starting with '00' - strip to get '80652245'
+        const result = validateDeliveryNotes(makeExtractionResult(['0080652245']));
+        
+        assertEqual(result.accepted.length, 1, 'Accepted count');
+        assertEqual(result.accepted[0], '80652245', 'Corrected value');
+        assertEqual(result.autoCorrections.length, 1, 'Auto-corrections count');
+        assertEqual(result.autoCorrections[0].original, '0080652245', 'Original');
+        assertEqual(result.autoCorrections[0].corrected, '80652245', 'Corrected');
+        assertEqual(result.excluded.length, 0, 'Excluded count');
+    });
+    
+    test('9-digit with leading zero (0XXXXXXXX) should be auto-corrected to 8 digits (v7.3)', () => {
+        // '080652245' has 9 digits starting with '0' - strip to get '80652245'
+        const result = validateDeliveryNotes(makeExtractionResult(['080652245']));
+        
+        assertEqual(result.accepted.length, 1, 'Accepted count');
+        assertEqual(result.accepted[0], '80652245', 'Corrected value');
+        assertEqual(result.autoCorrections.length, 1, 'Auto-corrections count');
+        assertEqual(result.autoCorrections[0].original, '080652245', 'Original');
+        assertEqual(result.autoCorrections[0].corrected, '80652245', 'Corrected');
+    });
+    
+    test('Multiple leading zeros should all be stripped (v7.3)', () => {
+        // '000080652245' - should strip 4 zeros to get '80652245'
+        const result = validateDeliveryNotes(makeExtractionResult(['000080652245']));
+        
+        assertEqual(result.accepted.length, 1, 'Accepted count');
+        assertEqual(result.accepted[0], '80652245', 'Corrected value');
+        assertEqual(result.autoCorrections.length, 1, 'Auto-corrections count');
+    });
+    
+    test('9-digit not starting with 0 should be EXCLUDED (v7.3)', () => {
+        // '123456789' - 9 digits not starting with 0 → exclude
+        const result = validateDeliveryNotes(makeExtractionResult(['123456789']));
+        
+        assertEqual(result.accepted.length, 0, 'Accepted count');
+        assertEqual(result.excluded.length, 1, 'Excluded count');
+        assertEqual(result.autoCorrections.length, 0, 'No auto-corrections');
+    });
+    
+    test('10-digit starting with 0 but result not 8 digits should be EXCLUDED (v7.3)', () => {
+        // '0123456789' - strip 0 → '123456789' (9 digits) → still too long → exclude
+        const result = validateDeliveryNotes(makeExtractionResult(['0123456789']));
+        
+        assertEqual(result.accepted.length, 0, 'Accepted count');
+        assertEqual(result.excluded.length, 1, 'Excluded count');
+        assertEqual(result.autoCorrections.length, 0, 'No auto-corrections');
+    });
+    
+    test('Mixed leading zeros and normal numbers (v7.3)', () => {
+        const result = validateDeliveryNotes(makeExtractionResult([
+            '26996798',    // 8 digits - accept
+            '0080652245',  // 10 digits with 00 → 80652245 (auto-fix)
+            '080652380',   // 9 digits with 0 → 80652380 (auto-fix)
+            '123456789',   // 9 digits no leading 0 → exclude
+        ]));
+        
+        assertEqual(result.accepted.length, 3, 'Accepted count (1 original + 2 corrected)');
+        assertEqual(result.autoCorrections.length, 2, 'Auto-corrections count');
+        assertEqual(result.excluded.length, 1, 'Excluded count');
     });
     
     // Summary
